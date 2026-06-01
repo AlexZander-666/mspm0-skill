@@ -131,7 +131,7 @@ python scripts\ccs_dss_debug.py <project-dir> run-to-symbol --symbol main --load
 
 This path uses `targetConfigs/*.ccxml`, so it follows the probe configured by the CCS project. It is not inherently limited to J-Link, but the `.ccxml` must match the connected probe such as J-Link or XDS110.
 
-Keep this separate from OpenOCD/GDB debugging. A future OpenOCD debug flow should use an explicit OpenOCD/GDB backend rather than this CCS-DSS wrapper.
+Keep this separate from OpenOCD/GDB debugging. Use the explicit OpenOCD/GDB backend described in `openocd_debug.md` rather than this CCS-DSS wrapper.
 
 ## OpenOCD Flash
 
@@ -142,6 +142,19 @@ openocd -f <probe-or-board.cfg> -c "program <firmware.elf|firmware.hex|firmware.
 ```
 
 Keep the flash backend explicit, for example `--backend dslite` or `--backend openocd`, when writing wrappers or documentation.
+
+## OpenOCD / GDB Debug
+
+For an MSPM0-capable OpenOCD installation, use the packaged helper described in `openocd_debug.md`:
+
+```powershell
+python scripts\openocd_debug.py <project-dir> probe
+python scripts\openocd_debug.py <project-dir> flash
+python scripts\openocd_debug.py <project-dir> registers
+python scripts\openocd_debug.py <project-dir> run-to-symbol --symbol main
+```
+
+Keep one OpenOCD operation active per probe. Do not run flash and debug commands concurrently. If the helper reports a locked or protected target, stop and ask the user to perform their manual unlock procedure. Do not automatically mass erase or factory reset the target.
 
 ## Hardware Claims
 

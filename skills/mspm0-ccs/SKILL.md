@@ -92,6 +92,7 @@ Read references only when needed:
 - `references/sdk_schema_lookup.md`: how to find official SysConfig fields and examples in the local MSPM0 SDK.
 - `references/hardware_validation_notes.md`: verified Tianmengxing MSPM0G3507 lessons, HFXT warnings, flash/reset behavior, and real-board caveats.
 - `references/ccs_dss_debug.md`: CCS Debug Server Scripting (`ccs-dss`) debug workflow, breakpoints, register reads, and current limitations.
+- `references/openocd_debug.md`: OpenOCD + GDB probe, flash, register-read, breakpoint, retry, and manual-unlock workflow.
 
 Use `examples/` as one source for reusable tested patterns. Prefer `scripts/list_examples.py` to inspect available examples before opening individual example files, but do not assume packaged examples outrank the user's existing project structure or official TI SDK examples.
 
@@ -129,6 +130,9 @@ When applying an example to a user project:
 - `python scripts/serial_console.py --list`: list serial ports.
 - `python scripts/ccs_dss_debug.py <project-dir> probe --leave-running`: connect through CCS Debug Server Scripting, read reset/register state, verify the configured `.ccxml` debug path, and continue the target before disconnecting.
 - `python scripts/ccs_dss_debug.py <project-dir> load-symbols --symbol main`: load debug symbols from `.out` without programming flash.
+- `python scripts/openocd_debug.py <project-dir> probe`: connect through OpenOCD, halt briefly, report target state, and resume.
+- `python scripts/openocd_debug.py <project-dir> flash`: flash, verify, and reset-run an auto-detected `.out`, `.elf`, `.axf`, or `.hex` output through OpenOCD.
+- `python scripts/openocd_debug.py <project-dir> run-to-symbol --symbol main`: use OpenOCD + `arm-none-eabi-gdb` to reset and run to a symbol breakpoint.
 
 For the verified CH340 setup, use `python scripts/serial_console.py -p COM6 -b 115200 --timestamp --duration 10` after closing other serial tools such as VOFA+.
 For line-based MCU parsers, send one test frame and wait for the echo with `python scripts/serial_console.py -p COM6 -b 115200 --send "ping" --send-line --timestamp --duration 3`. Use `--send-hex "00 00 80 3F"` when testing binary payloads.
@@ -141,7 +145,7 @@ The verified CCS flash path is DSLite / UniFlash with J-Link. For automated flas
 dslite -c <target.ccxml> -e -r 2 -u <project.out>
 ```
 
-For CMake/GCC/OpenOCD projects, use the project's existing flash target or explicit OpenOCD config. Keep the backend explicit and report probe-discovery errors separately from build success.
+For CMake/GCC/OpenOCD projects, use the project's existing flash target or explicit OpenOCD config. The packaged `openocd_debug.py` helper can also flash an existing compatible output. Keep the backend explicit and report probe-discovery errors separately from build success.
 
 ## Debug Backends
 
@@ -156,4 +160,17 @@ python scripts/ccs_dss_debug.py <project-dir> break-address --address 0x2564 --s
 
 Use it only for CCS / CCS Theia / UniFlash-style projects with a valid `targetConfigs/*.ccxml`. The physical probe is selected by `.ccxml`, so the backend is not inherently J-Link-only; it can also work with CCS-supported probes such as XDS110 when the project configuration matches the hardware.
 
-Use `--symbols` or `load-symbols` when firmware is already flashed and the goal is to set breakpoints or inspect symbols without rewriting flash. Do not treat `ccs-dss` as the OpenOCD path. For CMake/GCC/OpenOCD projects, keep future debugging under a separate `openocd-gdb` backend. Debug actions can halt the CPU, so report that risk before using breakpoints or register inspection on real-time control hardware.
+Use `--symbols` or `load-symbols` when firmware is already flashed and the goal is to set breakpoints or inspect symbols without rewriting flash. Do not treat `ccs-dss` as the OpenOCD path.
+
+For OpenOCD-capable MSPM0 projects, keep debugging under the separate `openocd-gdb` backend:
+
+```text
+python scripts/openocd_debug.py <project-dir> probe
+python scripts/openocd_debug.py <project-dir> flash
+python scripts/openocd_debug.py <project-dir> registers
+python scripts/openocd_debug.py <project-dir> run-to-symbol --symbol main
+```
+
+Read `references/openocd_debug.md` before changing the OpenOCD interface or target config, diagnosing repeated connection failures, or attempting recovery. Do not run concurrent OpenOCD operations against one probe. The helper may retry intermittent CMSIS-DAP failures at lower SWD speeds, but it intentionally does not issue automatic mass erase, factory reset, or unlock commands. If the target appears locked or protected, stop and ask the user to perform their manual unlock procedure.
+
+Debug actions can halt the CPU, so report that risk before using breakpoints or register inspection on real-time control hardware.

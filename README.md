@@ -62,6 +62,7 @@ Copy-Item -Recurse -Force .\skills\mspm0-ccs "$env:USERPROFILE\.claude\skills\ms
 | 编译烧录 | 固化 SysConfig CLI、gmake、DSLite/J-Link、OpenOCD 等链路的经验 |
 | 串口工具 | Python 串口收发、文本帧测试、为后续 PID/参数调试做基础 |
 | CCS-DSS 调试 | 基于 CCS Debug Server Scripting 的探针连接、断点、符号加载辅助 |
+| OpenOCD/GDB 调试 | 基于 CMSIS-DAP、OpenOCD 和 GDB 的连接、烧录、寄存器读取与符号断点辅助 |
 | 例程管理 | 提供已验证例程，也支持从用户项目抽取精简例程包 |
 | 模块驱动 | 提供某个模块/传感器/电机的手册后要求Agent制作驱动 |
 
@@ -76,6 +77,7 @@ Copy-Item -Recurse -Force .\skills\mspm0-ccs "$env:USERPROFILE\.claude\skills\ms
 - 编译器：TI Arm Clang 4.x LTS
 - 烧录器：J-Link
 - 烧录工具：UniFlash / DSLite
+- OpenOCD 验证：CMSIS-DAP / DAPLink + MSPM0-capable OpenOCD + `target/ti_mspm0.cfg`
 - 已验证外设：PB22 板载 LED、PWM 呼吸灯、UART 阻塞发送、UART DMA 发送 + 中断/轮询接收
 
 其他开发板、芯片封装、SDK/CCS/Keil/CMake 版本、调试器或烧录方式可能也能使用，但没有完全保证。迁移到其他组合时，建议先做最小点灯、串口或 PWM 验证。
@@ -136,6 +138,15 @@ python skills\mspm0-ccs\scripts\ccs_dss_debug.py C:\Users\3545\workspace_ccsthei
 python skills\mspm0-ccs\scripts\ccs_dss_debug.py C:\Users\3545\workspace_ccstheia\26testproject2 run-to-symbol --symbol main --load --reset "System Reset"
 ```
 
+OpenOCD/GDB 调试链路适用于 CMSIS-DAP / DAPLink 等 OpenOCD 支持的探针，需要含 MSPM0 支持的 OpenOCD 版本：
+
+```powershell
+python skills\mspm0-ccs\scripts\openocd_debug.py C:\Users\3545\workspace_ccstheia\26testproject3 probe
+python skills\mspm0-ccs\scripts\openocd_debug.py C:\Users\3545\workspace_ccstheia\26testproject3 flash
+python skills\mspm0-ccs\scripts\openocd_debug.py C:\Users\3545\workspace_ccstheia\26testproject3 registers
+python skills\mspm0-ccs\scripts\openocd_debug.py C:\Users\3545\workspace_ccstheia\26testproject3 run-to-symbol --symbol main
+```
+
 ## 内置例程
 
 | 例程 | 频率 | 主要内容 |
@@ -154,7 +165,8 @@ python skills\mspm0-ccs\scripts\ccs_dss_debug.py C:\Users\3545\workspace_ccsthei
 - 修改 `.syscfg` 后需要重新运行 SysConfig 或重新构建工程。
 - 烧录前确认 CCS 的 `targetConfigs/*.ccxml`、Keil 调试器配置或 OpenOCD `.cfg` 与实际硬件一致。
 - 立创天猛星环境中，自动烧录建议优先使用 DSLite System Reset：`-e -r 2 -u`。
-- CCS-DSS 调试和 OpenOCD/GDB 调试是两条不同路径
+- CCS-DSS 调试和 OpenOCD/GDB 调试是两条不同路径。
+- 同一个探针不要并行运行多个 OpenOCD 操作。疑似锁片时应停止自动重试并让用户手动解锁，不要自动执行 mass erase 或 factory reset。
 
 更详细的 Agent 行为规则和经验记录见：
 
@@ -162,6 +174,7 @@ python skills\mspm0-ccs\scripts\ccs_dss_debug.py C:\Users\3545\workspace_ccsthei
 - `skills/mspm0-ccs/references/sysconfig_ccs_workflow.md`
 - `skills/mspm0-ccs/references/hardware_validation_notes.md`
 - `skills/mspm0-ccs/references/ccs_dss_debug.md`
+- `skills/mspm0-ccs/references/openocd_debug.md`
 
 ## 参考资料
 

@@ -10,7 +10,7 @@ This is the CCS Debug Server Scripting backend, abbreviated as `ccs-dss` in this
 - Requires a valid `targetConfigs/*.ccxml` for the active board and probe.
 - Requires a built CCS `.out` file when loading or reloading firmware.
 - Uses the debug probe selected inside `.ccxml`, so it is not limited to J-Link. It can also work with CCS-supported probes such as XDS110 when the `.ccxml` matches the connected hardware.
-- Does not cover OpenOCD/GDB debugging. Keep that as a future `openocd-gdb` backend.
+- Does not cover OpenOCD/GDB debugging. Use the separate `openocd-gdb` backend described in `openocd_debug.md`.
 
 ## Safety Rules
 
