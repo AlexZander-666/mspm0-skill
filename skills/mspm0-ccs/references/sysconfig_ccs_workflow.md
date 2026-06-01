@@ -84,6 +84,15 @@ Run the static checker first:
 python scripts\check_syscfg.py <project-dir>
 ```
 
+Before flashing or debugging, add the optional connected-probe check:
+
+```powershell
+python scripts\detect_probe.py
+python scripts\check_syscfg.py <project-dir> --probe
+```
+
+The probe detector is read-only. It should not open the target, erase flash, or reset the MCU. If the physical probe conflicts with CCS `.ccxml` or OpenOCD hints, stop and ask the user to confirm the intended backend before flashing.
+
 Run SysConfig CLI when available. Prefer the exact command generated in `Debug/subdir_rules.mk` when it exists for CCS projects. A fresh project may not have generated makefiles yet; SysConfig CLI can still validate `.syscfg` into a temporary output directory.
 
 Build through the active project's generated build flow when present:
@@ -106,6 +115,8 @@ cmake --build <project-dir>\cmake-build-debug --target <flash-target>
 If no configured build directory exists, configure one using the project's documented preset/toolchain. Do not invent compiler paths when the project README or toolchain file already declares them.
 
 ## DSLite / J-Link Flash
+
+For a vague request such as "flash this project", detect the connected probe before choosing DSLite, J-Link tools, or OpenOCD. Do not assume the user's previous probe is still connected.
 
 The verified flash path is DSLite / UniFlash with J-Link:
 

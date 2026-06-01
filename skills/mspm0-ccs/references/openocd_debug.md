@@ -2,6 +2,15 @@
 
 Use this reference when probing, flashing, or debugging MSPM0 hardware through OpenOCD. This backend is separate from CCS Debug Server Scripting (`ccs-dss`).
 
+Before selecting this backend for an unspecified probe, run:
+
+```powershell
+python scripts\detect_probe.py
+python scripts\check_syscfg.py <project-dir> --probe
+```
+
+Use OpenOCD only when the detected probe and interface configuration are compatible.
+
 ## Verified Scope
 
 The packaged helper was verified with:

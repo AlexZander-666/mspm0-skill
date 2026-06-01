@@ -11,6 +11,8 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Iterable
 
+from detect_probe import detect_probes
+
 
 GENERATED_NAMES = {"ti_msp_dl_config.c", "ti_msp_dl_config.h"}
 CCS_BUILD_DIRS = {"Debug", "Release"}
@@ -564,6 +566,68 @@ def check_project(root: Path) -> tuple[list[Message], dict[str, object]]:
     return messages, details
 
 
+def add_probe_check(root: Path, messages: list[Message], details: dict[str, object]) -> None:
+    hints = details.setdefault("validation_hints", {})
+    assert isinstance(hints, dict)
+    detector = Path(__file__).resolve().with_name("detect_probe.py")
+    hints["detect_probe"] = f'python "{detector}"'
+    try:
+        probes = detect_probes()
+    except Exception as exc:  # Keep static checks usable when OS probe enumeration is unavailable.
+        details["connected_probes"] = {"error": str(exc), "probes": []}
+        messages.append(Message("warning", f"Connected probe detection failed: {exc}"))
+        return
+
+    serialized = [asdict(probe) for probe in probes]
+    details["connected_probes"] = {"probes": serialized}
+    if not probes:
+        messages.append(Message("warning", "No supported connected debug probe was detected. Confirm the physical probe before flashing."))
+        return
+    if len(probes) > 1:
+        kinds = ", ".join(probe.kind for probe in probes)
+        messages.append(Message("warning", f"Multiple connected debug probes were detected: {kinds}. Ask the user which probe to use before flashing."))
+    for probe in probes:
+        suffix = f", USB {probe.usb_id}" if probe.usb_id else ""
+        config = f", config {probe.recommended_config}" if probe.recommended_config else ""
+        messages.append(
+            Message(
+                "info",
+                f"Connected probe: {probe.kind} ({probe.display_name}{suffix}). Recommended backend: {probe.recommended_backend}{config}.",
+            )
+        )
+
+    if len(probes) != 1:
+        return
+    connected = probes[0]
+    ccxmls = find_target_configs(root)
+    configured = {describe_target_config(path) for path in ccxmls}
+    expects_jlink = "SEGGER J-Link" in configured
+    expects_xds110 = "TI XDS110" in configured
+    mismatch = (expects_jlink and connected.kind != "jlink") or (expects_xds110 and connected.kind != "xds110")
+    if mismatch:
+        expected = ", ".join(sorted(configured))
+        for key in ("list_debug_cores", "ccs_dss_probe", "flash", "ccs_dss_run_to_main"):
+            hints.pop(key, None)
+        hints["probe_mismatch"] = "Stop before flashing. Ask the user to confirm the intended probe/backend."
+        messages.append(
+            Message(
+                "warning",
+                f"Connected probe {connected.kind} does not match CCS target config ({expected}). Do not flash through that CCS/DSLite config until the user confirms the backend.",
+            )
+        )
+    if connected.kind == "cmsis-dap":
+        openocd_script = Path(__file__).resolve().with_name("openocd_debug.py")
+        hints["openocd_probe"] = f'python "{openocd_script}" "{root}" probe'
+        if find_output_files(root):
+            hints["openocd_flash"] = f'python "{openocd_script}" "{root}" flash'
+        messages.append(
+            Message(
+                "info",
+                "CMSIS-DAP / DAPLink is connected. Prefer the OpenOCD path with interface/cmsis-dap.cfg unless the project intentionally declares another verified backend.",
+            )
+        )
+
+
 def print_text(root: Path, messages: list[Message], details: dict[str, object]) -> None:
     print(f"MSPM0 SysConfig static check: {root}")
     for msg in messages:
@@ -575,6 +639,7 @@ def print_text(root: Path, messages: list[Message], details: dict[str, object]) 
         print()
         print("Suggested CLI validation chain:")
         for key in (
+            "detect_probe",
             "sysconfig_cli",
             "gmake",
             "cmake_configure",
@@ -584,7 +649,9 @@ def print_text(root: Path, messages: list[Message], details: dict[str, object]) 
             "ccs_dss_probe",
             "flash",
             "ccs_dss_run_to_main",
+            "openocd_probe",
             "openocd_flash",
+            "probe_mismatch",
         ):
             if key in hints:
                 print(f"- {key}: {hints[key]}")
@@ -594,10 +661,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Check an MSPM0 SysConfig project.")
     parser.add_argument("project", nargs="?", default=".", help="Path to a project directory.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
+    parser.add_argument("--probe", action="store_true", help="Also detect connected debug probes and compare them with project hints.")
     args = parser.parse_args()
 
     root = Path(args.project).resolve()
     messages, details = check_project(root)
+    if args.probe:
+        add_probe_check(root, messages, details)
     has_error = any(msg.level == "error" for msg in messages)
 
     if args.json:

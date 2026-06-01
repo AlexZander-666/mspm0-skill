@@ -111,6 +111,13 @@ Codex 配置外设并用 VOFA+ 查看串口输出：
 python skills\mspm0-ccs\scripts\check_syscfg.py C:\Users\3545\workspace_ccstheia\26testproject1
 ```
 
+烧录或调试前，只读识别当前连接的探针，并与工程配置对比：
+
+```powershell
+python skills\mspm0-ccs\scripts\detect_probe.py
+python skills\mspm0-ccs\scripts\check_syscfg.py C:\Users\3545\workspace_ccstheia\26testproject1 --probe
+```
+
 串口收发测试：
 
 ```powershell
@@ -164,6 +171,7 @@ python skills\mspm0-ccs\scripts\openocd_debug.py C:\Users\3545\workspace_ccsthei
 
 - 修改 `.syscfg` 后需要重新运行 SysConfig 或重新构建工程。
 - 烧录前确认 CCS 的 `targetConfigs/*.ccxml`、Keil 调试器配置或 OpenOCD `.cfg` 与实际硬件一致。
+- 用户只说“帮我烧录”时，应先运行 `detect_probe.py` 或 `check_syscfg.py <project-dir> --probe`。如果连接了多个探针、无法识别探针或工程配置与物理探针冲突，应先确认后端，不要盲目烧录。
 - 立创天猛星环境中，自动烧录建议优先使用 DSLite System Reset：`-e -r 2 -u`。
 - CCS-DSS 调试和 OpenOCD/GDB 调试是两条不同路径。
 - 同一个探针不要并行运行多个 OpenOCD 操作。疑似锁片时应停止自动重试并让用户手动解锁，不要自动执行 mass erase 或 factory reset。
