@@ -4,7 +4,7 @@
 
 它主要服务于国内 MSPM0 开发、电赛备赛、TI 官方开发板和立创天猛星 MSPM0G3507 等场景，帮助 Claude Code、OpenCode、OpenClaw、Continue、Cursor、Codex 等 CLI / 编辑器 Agent 更安全地理解、修改、编译、烧录和调试 MSPM0 工程。
 
-当前重点支持 CCS / CCS Theia + SysConfig + TI Arm Clang 工作流，同时包含 Keil/uVision、CMake + GCC + OpenOCD 项目的识别和使用说明。
+Agent可以通过SysConfig初始化引脚,自动识别项目结构/工作流/调试器,适配 CCS / Keil uVision / VSCode / CLion等IDE,支持 TI Arm Clang / CMake+GCC等工具链 , DSLite/OpenOCD等方式进行烧录和自动调试。
 
 ## 快速安装
 
@@ -40,7 +40,7 @@ Copy-Item -Recurse -Force .\skills\mspm0-ccs "$env:USERPROFILE\.claude\skills\ms
 安装后，在 MSPM0 工程目录中可以这样要求 Agent：
 
 ```text
-请使用 mspm0-ccs skill，先检查当前工程的 .syscfg 和 ti_msp_dl_config.h，
+请使用 mspm0-ccs skill，先检查当前工程的 .syscfg ，
 然后帮我给立创天猛星 PB22 板载 LED 配置 1 秒闪烁，并编译烧录。
 ```
 
@@ -51,7 +51,7 @@ Copy-Item -Recurse -Force .\skills\mspm0-ccs "$env:USERPROFILE\.claude\skills\ms
 
 ```text
 请使用 mspm0-ccs skill，检查这个 MSPM0 工程属于 CCS、Keil 还是 CMake/OpenOCD 工作流，
-不要修改生成文件，先给我说明构建和烧录路径。
+检查我当前连接的调试器，不要修改生成文件，先给我说明构建和烧录路径。
 ```
 
 ## 功能概览
@@ -63,7 +63,7 @@ Copy-Item -Recurse -Force .\skills\mspm0-ccs "$env:USERPROFILE\.claude\skills\ms
 | 串口工具 | Python 串口收发、文本帧测试、为后续 PID/参数调试做基础 |
 | CCS-DSS 调试 | 基于 CCS Debug Server Scripting 的探针连接、断点、符号加载辅助 |
 | OpenOCD/GDB 调试 | 基于 CMSIS-DAP、OpenOCD 和 GDB 的连接、烧录、寄存器读取与符号断点辅助 |
-| 例程管理 | 提供已验证例程，也支持从用户项目抽取精简例程包 |
+| 例程管理 | 自动从TI SDK中搜寻例程，同时提供已验证例程，也支持从用户项目抽取精简例程包 |
 | 模块驱动 | 提供某个模块/传感器/电机的手册后要求Agent制作驱动 |
 
 ## 已验证环境
@@ -71,16 +71,15 @@ Copy-Item -Recurse -Force .\skills\mspm0-ccs "$env:USERPROFILE\.claude\skills\ms
 主要验证组合：
 
 - 开发板：立创天猛星 MSPM0G3507
-- 开发环境：CCS / CCS Theia
+- 开发环境：CCS Theia / VS Code / CLion
 - SDK：MSPM0 SDK 2.10.00.04
 - SysConfig：1.26.2
-- 编译器：TI Arm Clang 4.x LTS
-- 烧录器：J-Link
-- 烧录工具：UniFlash / DSLite
-- OpenOCD 验证：CMSIS-DAP / DAPLink + MSPM0-capable OpenOCD + `target/ti_mspm0.cfg`
-- 已验证外设：PB22 板载 LED、PWM 呼吸灯、UART 阻塞发送、UART DMA 发送 + 中断/轮询接收
+- 编译器：TI Arm Clang 4.x LTS / CMake + GCC
+- 烧录器：J-Link / DAPLink
+- 烧录工具：UniFlash / DSLite / OpenOCD
+- 已验证外设：GPIO、UART+DMA 、TIM 、IIC 等
 
-其他开发板、芯片封装、SDK/CCS/Keil/CMake 版本、调试器或烧录方式可能也能使用，但没有完全保证。迁移到其他组合时，建议先做最小点灯、串口或 PWM 验证。
+其他开发板、芯片封装、SDK/CCS/Keil/CMake 版本、调试器或烧录方式可能也能使用，但没有完全保证。迁移到其他组合时，建议先做最小点灯、串口或定时器验证。
 
 ## 使用示例
 
@@ -101,9 +100,13 @@ Codex 配置外设并用 VOFA+ 查看串口输出：
 
 更多截图见：`skills/mspm0-ccs/assets/screenshots/`
 
-## 常用脚本
+## 常用脚本示例
 
-以下命令默认在本仓库根目录执行；如果你在其他目录打开终端，请把脚本路径改成绝对路径。
+- Agent会在需要时自动调用脚本工具
+
+- 以下命令是在我本地目录下使用的示例
+
+- 默认在本仓库根目录执行；如果你在其他目录打开终端，请把脚本路径改成绝对路径。
 
 检查 MSPM0 工程：
 
@@ -171,18 +174,9 @@ python skills\mspm0-ccs\scripts\openocd_debug.py C:\Users\3545\workspace_ccsthei
 
 - 修改 `.syscfg` 后需要重新运行 SysConfig 或重新构建工程。
 - 烧录前确认 CCS 的 `targetConfigs/*.ccxml`、Keil 调试器配置或 OpenOCD `.cfg` 与实际硬件一致。
-- 用户只说“帮我烧录”时，应先运行 `detect_probe.py` 或 `check_syscfg.py <project-dir> --probe`。如果连接了多个探针、无法识别探针或工程配置与物理探针冲突，应先确认后端，不要盲目烧录。
-- 立创天猛星环境中，自动烧录建议优先使用 DSLite System Reset：`-e -r 2 -u`。
-- CCS-DSS 调试和 OpenOCD/GDB 调试是两条不同路径。
-- 同一个探针不要并行运行多个 OpenOCD 操作。疑似锁片时应停止自动重试并让用户手动解锁，不要自动执行 mass erase 或 factory reset。
-
-更详细的 Agent 行为规则和经验记录见：
-
-- `skills/mspm0-ccs/SKILL.md`
-- `skills/mspm0-ccs/references/sysconfig_ccs_workflow.md`
-- `skills/mspm0-ccs/references/hardware_validation_notes.md`
-- `skills/mspm0-ccs/references/ccs_dss_debug.md`
-- `skills/mspm0-ccs/references/openocd_debug.md`
+- 要求Agent烧录或调试时建议说明自己的调试器，CCS-DSS 调试和 OpenOCD/GDB 调试是两条不同路径。
+- 同一个探针不要并行运行多个 OpenOCD 操作。使用ST-Link等烧录器时可能会锁芯片，此时建议手动解锁芯片再使用
+- 要求Agent调试串口前应关闭打开的串口助手/VOFA等软件，避免占用串口
 
 ## 参考资料
 
