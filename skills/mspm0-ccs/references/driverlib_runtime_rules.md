@@ -42,6 +42,14 @@ Interrupt handlers should:
 
 Avoid long delays, blocking serial I/O, complex parsing, slow bus transactions, and heavy control logic inside ISRs.
 
+For a SysConfig periodic TIMER interrupt:
+
+- set `timerPeriod`, `timerMode = "PERIODIC"`, `interrupts = ["ZERO"]`, and the selected timer peripheral in `.syscfg`
+- enable the generated IRQ with `NVIC_EnableIRQ(TIMER_x_INST_INT_IRQN)`
+- start the counter with `DL_TimerG_startCounter(TIMER_x_INST)`
+- use `DL_TimerG_getPendingInterrupt()` and handle `DL_TIMER_IIDX_ZERO` in the ISR
+- confirm the generated load value after changing CPUCLK
+
 ## FreeRTOS Projects
 
 If a project includes `FreeRTOSConfig.h`, `FreeRTOS.h`, `task.h`, `xTaskCreate`, or `vTaskStartScheduler`, first map the existing task/ISR boundaries.
@@ -80,6 +88,7 @@ If `delay_cycles(80000000)` gives about 2.5 s, the program is likely running nea
 - Reinitializing by hand a peripheral already owned by SysConfig.
 - Reporting SysConfig warnings as clean success.
 - Rewriting unrelated user code or copyright headers.
+- Blindly copying `SYSCTL.peripheral.$suggestSolution` into an HFXT clock-tree configuration. If SysConfig reports that `SYSCTL.peripheral` is undefined, remove that copied line; HFXT pinmux suggestions belong to the HFXT clock-tree object.
 
 ## External Modules
 

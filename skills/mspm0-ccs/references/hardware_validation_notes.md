@@ -12,7 +12,7 @@ Validated combination:
 - SysConfig: 1.26.2
 - Compiler: TI Arm Clang 4.0.3 LTS
 - Debug probe: J-Link through UniFlash / DSLite
-- Validated peripherals: PB22 onboard LED, UART0 blocking TX, dual UART DMA TX + IRQ RX, PB22 TIMG8 PWM breathing LED
+- Validated peripherals: PB22 onboard LED, UART0 blocking TX, dual UART DMA TX + IRQ RX, PB22 TIMG8 PWM breathing LED, TIMG12 periodic interrupt
 - Validated clock: 80 MHz CPUCLK with MFCLK 4 MHz for UART work
 
 Other boards, packages, SDK versions, CCS versions, probes, and pin maps may work, but they are not guaranteed by these notes.
@@ -87,6 +87,26 @@ Successful runtime pattern:
 - at 80 MHz, `delay_cycles(800000)` is roughly 10 ms per step
 
 Failed patterns included one-second delay per brightness step and exact boundary values that made the LED appear off or glitchy.
+
+## TIMG12 Periodic Interrupt Lessons
+
+A verified timer interrupt smoke test used:
+
+- CPUCLK: 80 MHz
+- Timer: TIMG12
+- TIMER period: 1 ms
+- Generated load value: `79999U`
+- ISR event: `DL_TIMER_IIDX_ZERO`
+- Runtime behavior: toggle PB22 after 500 timer interrupts, so the LED state changes every 500 ms
+
+At the original 32 MHz baseline, the same 1 ms timer generated a load value of `31999U`. After changing CPUCLK, rebuild and inspect the generated header instead of reusing an old load value.
+
+Keep timing ownership split cleanly:
+
+- `.syscfg`: timer instance, period, mode, interrupt event, clocks, and PB22 pinmux
+- application code: `NVIC_EnableIRQ()`, `DL_TimerG_startCounter()`, a short ISR counter, and `DL_GPIO_togglePins()`
+
+Do not blindly copy `SYSCTL.peripheral.$suggestSolution = "SYSCTL"` while adding this 80 MHz clock-tree pattern to an empty project. In the verified timer project this produced `TypeError: Cannot set properties of undefined`. Remove that copied line if SysConfig reports `SYSCTL.peripheral` is undefined. HFXT pinmux suggestions belong to `system.clockTree["HFXT"].peripheral`.
 
 ## Flash And Reset
 

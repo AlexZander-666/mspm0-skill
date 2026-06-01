@@ -143,6 +143,7 @@ python skills\mspm0-ccs\scripts\ccs_dss_debug.py C:\Users\3545\workspace_ccsthei
 | `empty_project` | 32MHz | 空工程基线 |
 | `led_blink` | 32MHz | PB22 板载 LED 闪烁 |
 | `pwm_breath_led` | 80MHz | PB22 / TIMG PWM 呼吸灯 |
+| `timer_irq_led` | 80MHz | TIMG12 1ms 定时中断，ISR 每 500ms 翻转 PB22 |
 | `uart_blocking_tx` | 80MHz | UART0 阻塞发送字符串 |
 | `uart_dma_tx_irq_rx` | 80MHz | UART DMA 发送 + 中断/轮询接收 + 文本帧解析示例 |
 

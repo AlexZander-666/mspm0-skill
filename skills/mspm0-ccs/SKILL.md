@@ -118,6 +118,7 @@ When applying an example to a user project:
 - Prefer the user's local style when it conflicts with an example's directory names, wrapper names, or layering.
 - Consider official TI SDK examples and local SDK metadata at the same or higher priority when they better match the user's board, SDK version, peripheral, or toolchain.
 - For DMA UART examples, keep TX buffers per UART instance, avoid shared static printf buffers, and choose RX handling per port: ISR callback for the one port that needs immediate line parsing, `UART_poll()` for extra receive ports, or TX-only init for ports that do not receive.
+- For periodic timer interrupts, configure the TIMER instance and interrupt in `.syscfg`, confirm the generated load value against the generated CPU clock, enable the generated IRQ in application code, and keep the ISR short.
 
 ## Tools
 
