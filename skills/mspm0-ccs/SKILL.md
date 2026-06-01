@@ -88,12 +88,10 @@ When asked to drive an external module, sensor, motor driver, servo, display, ra
 
 Read references only when needed:
 
-- `references/sysconfig_ccs_workflow.md`: `.syscfg` editing, CCS / Keil / CMake project layout, SysConfig CLI, gmake, CMake build, DSLite/J-Link, and OpenOCD.
+- `references/project_workflows.md`: `.syscfg` editing, CCS / Keil / CMake project layout, SDK schema lookup, SysConfig CLI, builds, DSLite/J-Link, and OpenOCD.
 - `references/driverlib_runtime_rules.md`: DriverLib usage, interrupts, clock tree, delays, and common runtime mistakes.
-- `references/sdk_schema_lookup.md`: how to find official SysConfig fields and examples in the local MSPM0 SDK.
 - `references/hardware_validation_notes.md`: verified Tianmengxing MSPM0G3507 lessons, HFXT warnings, flash/reset behavior, and real-board caveats.
-- `references/ccs_dss_debug.md`: CCS Debug Server Scripting (`ccs-dss`) debug workflow, breakpoints, register reads, and current limitations.
-- `references/openocd_debug.md`: OpenOCD + GDB probe, flash, register-read, breakpoint, retry, and manual-unlock workflow.
+- `references/debug_backends.md`: CCS-DSS and OpenOCD/GDB probe, flash, breakpoint, retry, and manual-unlock workflows.
 
 Use `examples/` as one source for reusable tested patterns. Prefer `scripts/list_examples.py` to inspect available examples before opening individual example files, but do not assume packaged examples outrank the user's existing project structure or official TI SDK examples.
 
@@ -161,28 +159,18 @@ For CMake/GCC/OpenOCD projects, use the project's existing flash target or expli
 
 ## Debug Backends
 
-The currently packaged automated debug helper is the CCS Debug Server Scripting backend (`ccs-dss`):
+Keep CCS-DSS and OpenOCD/GDB as separate backends. Read `references/debug_backends.md` before debugging or diagnosing repeated probe failures.
+
+For CCS / CCS Theia / UniFlash-style projects with a matching `targetConfigs/*.ccxml`:
 
 ```text
 python scripts/ccs_dss_debug.py <project-dir> probe --leave-running
-python scripts/ccs_dss_debug.py <project-dir> run-to-symbol --symbol main --load --reset "System Reset"
-python scripts/ccs_dss_debug.py <project-dir> break-line --source BSP/UART.c --line 75 --symbols --reset "System Reset"
-python scripts/ccs_dss_debug.py <project-dir> break-address --address 0x2564 --symbols --reset "System Reset"
 ```
 
-Use it only for CCS / CCS Theia / UniFlash-style projects with a valid `targetConfigs/*.ccxml`. The physical probe is selected by `.ccxml`, so the backend is not inherently J-Link-only; it can also work with CCS-supported probes such as XDS110 when the project configuration matches the hardware.
-
-Use `--symbols` or `load-symbols` when firmware is already flashed and the goal is to set breakpoints or inspect symbols without rewriting flash. Do not treat `ccs-dss` as the OpenOCD path.
-
-For OpenOCD-capable MSPM0 projects, keep debugging under the separate `openocd-gdb` backend:
+For OpenOCD-capable MSPM0 projects:
 
 ```text
 python scripts/openocd_debug.py <project-dir> probe
-python scripts/openocd_debug.py <project-dir> flash
-python scripts/openocd_debug.py <project-dir> registers
-python scripts/openocd_debug.py <project-dir> run-to-symbol --symbol main
 ```
 
-Read `references/openocd_debug.md` before changing the OpenOCD interface or target config, diagnosing repeated connection failures, or attempting recovery. Do not run concurrent OpenOCD operations against one probe. The helper may retry intermittent CMSIS-DAP failures at lower SWD speeds, but it intentionally does not issue automatic mass erase, factory reset, or unlock commands. If the target appears locked or protected, stop and ask the user to perform their manual unlock procedure.
-
-Debug actions can halt the CPU, so report that risk before using breakpoints or register inspection on real-time control hardware.
+The CCS-DSS physical probe is selected by `.ccxml`; it is not inherently J-Link-only. Use symbol-only loading when firmware is already flashed and rewriting flash is unnecessary. For OpenOCD, do not run concurrent operations against one probe. Neither backend should silently issue destructive recovery. If the target appears locked or protected, stop and ask the user to perform their manual unlock procedure. Debug actions can halt the CPU, so report that risk before using breakpoints or register inspection on real-time control hardware.
