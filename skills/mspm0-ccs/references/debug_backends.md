@@ -173,15 +173,14 @@ python scripts\openocd_debug.py <project-dir> --interface <interface.cfg> --targ
 
 ```text
 init
-reset halt
+reset init
 flash write_image erase <program>
-reset halt
 verify_image <program>
 reset run
 shutdown
 ```
 
-Use `--program <path>` when several outputs exist and the automatic choice is ambiguous. Use `--no-verify` only when the user explicitly accepts losing verification.
+The helper searches CCS `Debug`/`Release`, generic `build`, CLion-style `cmake-build-*`, and the project root. Use `--program <path>` when several outputs exist and the automatic choice is ambiguous. Use `--no-verify` only when the user explicitly accepts losing verification.
 
 ### Connection Failures And Retries
 

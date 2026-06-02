@@ -98,8 +98,13 @@ def find_program(project_dir: Path, explicit: str | None) -> Path:
         return find_existing([Path(explicit)], "program output")
 
     candidates: list[Path] = []
-    for build_dir in ("Debug", "Release", "build"):
-        root = project_dir / build_dir
+    build_dirs = [project_dir / name for name in ("Debug", "Release", "build")]
+    build_dirs.extend(
+        path
+        for path in project_dir.iterdir()
+        if path.is_dir() and path.name.lower().startswith("cmake-build-")
+    )
+    for root in build_dirs:
         if not root.exists():
             continue
         for suffix in PROGRAM_SUFFIXES:
@@ -352,7 +357,7 @@ def flash_commands(program: Path, base_address: str | None, verify: bool) -> str
         write = f"flash write_image erase {path}"
         check = f"verify_image {path}"
 
-    commands = f"init; reset halt; {write}; reset halt"
+    commands = f"init; reset init; {write}"
     if verify:
         commands += f"; {check}"
     commands += "; reset run; shutdown"

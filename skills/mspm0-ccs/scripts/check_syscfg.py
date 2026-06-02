@@ -269,16 +269,20 @@ def find_validation_hints(root: Path) -> dict[str, str]:
     outputs = find_output_files(root)
     dslite_flash_outputs = [p for p in outputs if p.suffix.lower() == ".out"] or outputs
     openocd_flash_outputs = [p for p in outputs if p.suffix.lower() in {".elf", ".hex", ".bin"}]
-    if ccxmls:
+    if len(ccxmls) == 1:
         hints["list_debug_cores"] = f'dslite -c "{ccxmls[0]}" -N'
         dss_script = Path(__file__).resolve().with_name("ccs_dss_debug.py")
         hints["ccs_dss_probe"] = f'python "{dss_script}" "{root}" probe --leave-running'
-    if ccxmls and len(dslite_flash_outputs) == 1:
+    elif len(ccxmls) > 1:
+        hints["ccs_target_config_selection"] = (
+            "Multiple CCS targetConfigs/*.ccxml files found. Ask the user which probe/config to use before running DSLite or CCS-DSS commands."
+        )
+    if len(ccxmls) == 1 and len(dslite_flash_outputs) == 1:
         hints["flash"] = f'dslite -c "{ccxmls[0]}" -e -r 2 -u "{dslite_flash_outputs[0]}"'
         hints["ccs_dss_run_to_main"] = (
             f'python "{dss_script}" "{root}" run-to-symbol --symbol main --load --reset "System Reset"'
         )
-    elif ccxmls and len(dslite_flash_outputs) > 1:
+    elif len(ccxmls) == 1 and len(dslite_flash_outputs) > 1:
         hints["flash"] = "Multiple program outputs found. Choose the intended output explicitly before flashing with DSLite."
 
     keil_projects = find_keil_projects(root)
@@ -562,6 +566,8 @@ def check_project(root: Path) -> tuple[list[Message], dict[str, object]]:
         for ccxml in ccxmls:
             probe = describe_target_config(ccxml)
             messages.append(Message("info", f"目标配置使用调试器：{probe}。请确认它和实际连接的烧录器一致。", rel(ccxml, root)))
+    if len(ccxmls) > 1:
+        messages.append(Message("warning", "Multiple CCS targetConfigs/*.ccxml files were found. Ask the user which probe/config to use before running DSLite or CCS-DSS commands."))
     if keil_projects and not ccxmls:
         messages.append(Message("info", "未发现 targetConfigs/*.ccxml；当前是 Keil 工程，通常通过 `.uvprojx` 和 Keil 调试器配置来验证。"))
     elif keil_projects:
@@ -664,6 +670,7 @@ def print_text(root: Path, messages: list[Message], details: dict[str, object]) 
             "cmake_configure",
             "cmake_build",
             "keil_build",
+            "ccs_target_config_selection",
             "list_debug_cores",
             "ccs_dss_probe",
             "flash",
