@@ -610,9 +610,15 @@ def add_probe_check(root: Path, messages: list[Message], details: dict[str, obje
     connected = probes[0]
     ccxmls = find_target_configs(root)
     configured = {describe_target_config(path) for path in ccxmls}
-    expects_jlink = "SEGGER J-Link" in configured
-    expects_xds110 = "TI XDS110" in configured
-    mismatch = (expects_jlink and connected.kind != "jlink") or (expects_xds110 and connected.kind != "xds110")
+    configured_probe_kinds = {
+        kind
+        for name, kind in (
+            ("SEGGER J-Link", "jlink"),
+            ("TI XDS110", "xds110"),
+        )
+        if name in configured
+    }
+    mismatch = bool(configured_probe_kinds) and connected.kind not in configured_probe_kinds
     if mismatch:
         expected = ", ".join(sorted(configured))
         for key in ("list_debug_cores", "ccs_dss_probe", "flash", "ccs_dss_run_to_main"):

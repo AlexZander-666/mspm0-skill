@@ -387,9 +387,10 @@ def run_to_symbol_once(args: argparse.Namespace, speed: int, program: Path, symb
     )
     try:
         if not wait_for_port("127.0.0.1", port, process, args.server_timeout):
+            timed_out = process.poll() is None
             output = terminate_process(process)
             print_output(output)
-            category, guidance = classify_failure(output, timed_out=process.returncode is None)
+            category, guidance = classify_failure(output, timed_out=timed_out)
             return AttemptResult(False, process.returncode or 1, output, category, guidance, speed)
 
         gdb_commands = [

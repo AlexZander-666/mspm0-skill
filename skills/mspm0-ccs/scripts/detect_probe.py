@@ -249,7 +249,7 @@ def detect_probes() -> list[Probe]:
         return detect_windows()
     if system == "Linux":
         return detect_linux()
-    return []
+    raise RuntimeError(f"probe detection is not implemented on {system or 'this operating system'}")
 
 
 def print_text(probes: list[Probe]) -> None:
