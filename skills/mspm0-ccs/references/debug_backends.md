@@ -201,8 +201,10 @@ If it reports `target_locked_or_protected`, stop retries and ask the user to run
 
 ### OpenOCD Debug Safety
 
-`probe`, `registers`, and `run-to-symbol` briefly halt the CPU while the helper is active, then restore target execution before the one-shot OpenOCD server exits. Before using them on motors, power electronics, or other real-time control systems:
+`probe` and `registers` briefly halt the current CPU state without resetting the target, then restore execution before the one-shot OpenOCD server exits. `run-to-symbol` intentionally resets and runs to the requested breakpoint. Before using debug actions on motors, power electronics, or other real-time control systems:
 
 1. Warn the user that debug actions may pause control loops.
 2. Put actuators into a safe state when possible.
 3. Do not promise that a one-shot OpenOCD command can leave the target halted after the server exits. Use a separately managed persistent OpenOCD session when a paused target must remain under debugger control.
+
+`run-to-symbol` refuses to attach when its GDB port is already occupied. Close the existing OpenOCD/debug session or choose an unused `--gdb-port`; do not attach to an unverified listener.

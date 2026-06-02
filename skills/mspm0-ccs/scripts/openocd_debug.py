@@ -377,6 +377,14 @@ def wait_for_port(host: str, port: int, process: subprocess.Popen[str], timeout:
     return False
 
 
+def port_is_open(host: str, port: int) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=0.2):
+            return True
+    except OSError:
+        return False
+
+
 def terminate_process(process: subprocess.Popen[str]) -> str:
     if process.poll() is None:
         process.terminate()
@@ -391,6 +399,13 @@ def terminate_process(process: subprocess.Popen[str]) -> str:
 
 def run_to_symbol_once(args: argparse.Namespace, speed: int, program: Path, symbol: str) -> AttemptResult:
     port = args.gdb_port
+    if port_is_open("127.0.0.1", port):
+        guidance = (
+            f"GDB port {port} is already in use. Stop the existing OpenOCD/debug session or choose a free --gdb-port "
+            "before running run-to-symbol. This helper will not attach to an unverified server."
+        )
+        emit("stopped", operation="run-to-symbol", category="gdb_port_in_use", guidance=guidance)
+        return AttemptResult(False, 2, guidance, "gdb_port_in_use", guidance, speed)
     openocd_command = openocd_args(
         args,
         speed,
@@ -569,7 +584,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.command == "probe":
-        return run_with_retries(args, "probe", lambda _speed: "init; reset run; sleep 300; halt; targets; resume; shutdown")
+        return run_with_retries(args, "probe", lambda _speed: "init; halt; targets; resume; shutdown")
     if args.command == "flash":
         program = find_program(args.project_dir, args.program)
         emit("program", path=str(program), suffix=program.suffix.lower())
@@ -583,7 +598,7 @@ def main(argv: list[str] | None = None) -> int:
             args,
             "registers",
             lambda _speed: (
-                f"init; reset run; sleep 300; halt; "
+                f"init; halt; "
                 f"echo [reg pc]; echo [reg sp]; echo [reg lr]; echo [reg xpsr]; resume; shutdown"
             ),
         )
