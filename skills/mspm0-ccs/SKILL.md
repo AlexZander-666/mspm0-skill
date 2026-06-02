@@ -16,7 +16,7 @@ Use this skill for TI MSPM0 firmware projects that use SysConfig and DriverLib t
 5. Before adding unfamiliar SysConfig fields, inspect the user's existing `.syscfg`, `examples/*/manifest.json`, TI SDK examples, or `source/ti/driverlib/.meta/*.syscfg.js`.
 6. Modify the smallest relevant `.syscfg` and application-code surface.
 7. Regenerate SysConfig output or rebuild through the active toolchain's generated build flow.
-8. If flashing or debugging, confirm the configured probe backend matches the connected hardware and prefer a System Reset after programming.
+8. If flashing or debugging, run `python scripts/detect_probe.py` or `python scripts/check_syscfg.py <project-dir> --probe` before selecting a backend. Confirm the configured probe matches the connected hardware and prefer a System Reset after programming.
 
 ## Core Rules
 
@@ -28,6 +28,7 @@ Use this skill for TI MSPM0 firmware projects that use SysConfig and DriverLib t
 - Do not invent SysConfig fields, enum values, device metadata, board names, package names, or tool versions. Validate against local examples, SDK metadata, or SysConfig CLI.
 - Preserve unrelated user code, comments, copyright headers, project layout, and existing `.syscfg` settings. If a requested feature requires a larger rewrite, explain why before making it when possible.
 - Do not change device, package, SDK, compiler, CCS version, board, or debug probe without user confirmation.
+- If the user asks only to "flash" or "debug", do not silently assume J-Link, XDS110, CMSIS-DAP/DAPLink, or ST-Link. Detect the connected probe first. If detection is unknown, multiple probes are connected, or the project configuration conflicts with the physical probe, stop and ask the user which backend to use.
 - If SysConfig emits warnings, report them separately from build/flash success. Do not call a warning-producing generation "clean".
 - If hardware behavior is not verified on a connected board, say that validation stopped at source, SysConfig, or build level.
 
@@ -87,11 +88,10 @@ When asked to drive an external module, sensor, motor driver, servo, display, ra
 
 Read references only when needed:
 
-- `references/sysconfig_ccs_workflow.md`: `.syscfg` editing, CCS / Keil / CMake project layout, SysConfig CLI, gmake, CMake build, DSLite/J-Link, and OpenOCD.
+- `references/project_workflows.md`: `.syscfg` editing, CCS / Keil / CMake project layout, SDK schema lookup, SysConfig CLI, builds, DSLite/J-Link, and OpenOCD.
 - `references/driverlib_runtime_rules.md`: DriverLib usage, interrupts, clock tree, delays, and common runtime mistakes.
-- `references/sdk_schema_lookup.md`: how to find official SysConfig fields and examples in the local MSPM0 SDK.
 - `references/hardware_validation_notes.md`: verified Tianmengxing MSPM0G3507 lessons, HFXT warnings, flash/reset behavior, and real-board caveats.
-- `references/ccs_dss_debug.md`: CCS Debug Server Scripting (`ccs-dss`) debug workflow, breakpoints, register reads, and current limitations.
+- `references/debug_backends.md`: CCS-DSS and OpenOCD/GDB probe, flash, breakpoint, retry, and manual-unlock workflows.
 
 Use `examples/` as one source for reusable tested patterns. Prefer `scripts/list_examples.py` to inspect available examples before opening individual example files, but do not assume packaged examples outrank the user's existing project structure or official TI SDK examples.
 
@@ -123,17 +123,31 @@ When applying an example to a user project:
 ## Tools
 
 - `python scripts/check_syscfg.py <project-dir>`: static project check for `.syscfg`, generated files, pins, init spelling, project shape, CCS/Keil/CMake/OpenOCD clues, build output, target config, and validation hints.
+- `python scripts/detect_probe.py`: read-only connected-probe detection for common CMSIS-DAP/DAPLink, J-Link, XDS110, and ST-Link hardware.
+- `python scripts/check_syscfg.py <project-dir> --probe`: run the static check, detect connected probes, compare them with project hints, and suppress unsafe flash suggestions when a CCS `.ccxml` conflicts with the physical probe.
 - `python scripts/list_examples.py`: list packaged examples from `examples/*/manifest.json`.
 - `python scripts/capture_example.py <project-dir> --name <example-name> --include <glob>`: package selected source files and `.syscfg` from a user project into `examples/<example-name>/`.
 - `python scripts/index_syscfg_examples.py <mspm0-sdk-root> --board LP_MSPM0G3507 --module UART`: search local TI SDK examples and module metadata.
 - `python scripts/serial_console.py --list`: list serial ports.
 - `python scripts/ccs_dss_debug.py <project-dir> probe --leave-running`: connect through CCS Debug Server Scripting, read reset/register state, verify the configured `.ccxml` debug path, and continue the target before disconnecting.
 - `python scripts/ccs_dss_debug.py <project-dir> load-symbols --symbol main`: load debug symbols from `.out` without programming flash.
+- `python scripts/openocd_debug.py <project-dir> probe`: connect through OpenOCD, halt briefly, report target state, and resume.
+- `python scripts/openocd_debug.py <project-dir> flash`: flash, verify, and reset-run an auto-detected `.out`, `.elf`, `.axf`, or `.hex` output through OpenOCD.
+- `python scripts/openocd_debug.py <project-dir> run-to-symbol --symbol main`: use OpenOCD + `arm-none-eabi-gdb` to reset and run to a symbol breakpoint.
 
 For the verified CH340 setup, use `python scripts/serial_console.py -p COM6 -b 115200 --timestamp --duration 10` after closing other serial tools such as VOFA+.
 For line-based MCU parsers, send one test frame and wait for the echo with `python scripts/serial_console.py -p COM6 -b 115200 --send "ping" --send-line --timestamp --duration 3`. Use `--send-hex "00 00 80 3F"` when testing binary payloads.
 
 ## Flash Backends
+
+Before selecting a flash backend for a vague request such as "flash this project", run:
+
+```text
+python scripts/detect_probe.py
+python scripts/check_syscfg.py <project-dir> --probe
+```
+
+Probe detection is read-only. Do not flash when multiple probes are connected, detection is unknown, or the physical probe conflicts with the project configuration until the user confirms the intended backend.
 
 The verified CCS flash path is DSLite / UniFlash with J-Link. For automated flashing after clock-tree changes, prefer DSLite System Reset:
 
@@ -141,19 +155,22 @@ The verified CCS flash path is DSLite / UniFlash with J-Link. For automated flas
 dslite -c <target.ccxml> -e -r 2 -u <project.out>
 ```
 
-For CMake/GCC/OpenOCD projects, use the project's existing flash target or explicit OpenOCD config. Keep the backend explicit and report probe-discovery errors separately from build success.
+For CMake/GCC/OpenOCD projects, use the project's existing flash target or explicit OpenOCD config. The packaged `openocd_debug.py` helper can also flash an existing compatible output. Keep the backend explicit and report probe-discovery errors separately from build success.
 
 ## Debug Backends
 
-The currently packaged automated debug helper is the CCS Debug Server Scripting backend (`ccs-dss`):
+Keep CCS-DSS and OpenOCD/GDB as separate backends. Read `references/debug_backends.md` before debugging or diagnosing repeated probe failures.
+
+For CCS / CCS Theia / UniFlash-style projects with a matching `targetConfigs/*.ccxml`:
 
 ```text
 python scripts/ccs_dss_debug.py <project-dir> probe --leave-running
-python scripts/ccs_dss_debug.py <project-dir> run-to-symbol --symbol main --load --reset "System Reset"
-python scripts/ccs_dss_debug.py <project-dir> break-line --source BSP/UART.c --line 75 --symbols --reset "System Reset"
-python scripts/ccs_dss_debug.py <project-dir> break-address --address 0x2564 --symbols --reset "System Reset"
 ```
 
-Use it only for CCS / CCS Theia / UniFlash-style projects with a valid `targetConfigs/*.ccxml`. The physical probe is selected by `.ccxml`, so the backend is not inherently J-Link-only; it can also work with CCS-supported probes such as XDS110 when the project configuration matches the hardware.
+For OpenOCD-capable MSPM0 projects:
 
-Use `--symbols` or `load-symbols` when firmware is already flashed and the goal is to set breakpoints or inspect symbols without rewriting flash. Do not treat `ccs-dss` as the OpenOCD path. For CMake/GCC/OpenOCD projects, keep future debugging under a separate `openocd-gdb` backend. Debug actions can halt the CPU, so report that risk before using breakpoints or register inspection on real-time control hardware.
+```text
+python scripts/openocd_debug.py <project-dir> probe
+```
+
+The CCS-DSS physical probe is selected by `.ccxml`; it is not inherently J-Link-only. Use symbol-only loading when firmware is already flashed and rewriting flash is unnecessary. For OpenOCD, do not run concurrent operations against one probe. Neither backend should silently issue destructive recovery. If the target appears locked or protected, stop and ask the user to perform their manual unlock procedure. Debug actions can halt the CPU, so report that risk before using breakpoints or register inspection on real-time control hardware.

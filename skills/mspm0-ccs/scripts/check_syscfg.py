@@ -7,9 +7,16 @@ import argparse
 import json
 import os
 import re
+import sys
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Iterable
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from detect_probe import detect_probes
 
 
 GENERATED_NAMES = {"ti_msp_dl_config.c", "ti_msp_dl_config.h"}
@@ -262,15 +269,21 @@ def find_validation_hints(root: Path) -> dict[str, str]:
     outputs = find_output_files(root)
     dslite_flash_outputs = [p for p in outputs if p.suffix.lower() == ".out"] or outputs
     openocd_flash_outputs = [p for p in outputs if p.suffix.lower() in {".elf", ".hex", ".bin"}]
-    if ccxmls:
+    if len(ccxmls) == 1:
         hints["list_debug_cores"] = f'dslite -c "{ccxmls[0]}" -N'
         dss_script = Path(__file__).resolve().with_name("ccs_dss_debug.py")
         hints["ccs_dss_probe"] = f'python "{dss_script}" "{root}" probe --leave-running'
-    if ccxmls and dslite_flash_outputs:
+    elif len(ccxmls) > 1:
+        hints["ccs_target_config_selection"] = (
+            "Multiple CCS targetConfigs/*.ccxml files found. Ask the user which probe/config to use before running DSLite or CCS-DSS commands."
+        )
+    if len(ccxmls) == 1 and len(dslite_flash_outputs) == 1:
         hints["flash"] = f'dslite -c "{ccxmls[0]}" -e -r 2 -u "{dslite_flash_outputs[0]}"'
         hints["ccs_dss_run_to_main"] = (
             f'python "{dss_script}" "{root}" run-to-symbol --symbol main --load --reset "System Reset"'
         )
+    elif len(ccxmls) == 1 and len(dslite_flash_outputs) > 1:
+        hints["flash"] = "Multiple program outputs found. Choose the intended output explicitly before flashing with DSLite."
 
     keil_projects = find_keil_projects(root)
     if keil_projects:
@@ -288,8 +301,10 @@ def find_validation_hints(root: Path) -> dict[str, str]:
         flash_target = cmake_info.get("flash_target")
         if build_dir and flash_target:
             hints["openocd_flash"] = f'cmake --build "{build_dir}" --target {flash_target}'
-        elif cmake_info["openocd_configs"] and openocd_flash_outputs:
+        elif cmake_info["openocd_configs"] and len(openocd_flash_outputs) == 1:
             hints["openocd_flash"] = f'openocd -f "{cmake_info["openocd_configs"][0]}" -c "program \\"{openocd_flash_outputs[0]}\\" verify reset exit"'
+        elif cmake_info["openocd_configs"] and len(openocd_flash_outputs) > 1:
+            hints["openocd_flash"] = "Multiple OpenOCD-compatible outputs found. Choose the intended output explicitly before flashing."
     return hints
 
 
@@ -551,6 +566,8 @@ def check_project(root: Path) -> tuple[list[Message], dict[str, object]]:
         for ccxml in ccxmls:
             probe = describe_target_config(ccxml)
             messages.append(Message("info", f"目标配置使用调试器：{probe}。请确认它和实际连接的烧录器一致。", rel(ccxml, root)))
+    if len(ccxmls) > 1:
+        messages.append(Message("warning", "Multiple CCS targetConfigs/*.ccxml files were found. Ask the user which probe/config to use before running DSLite or CCS-DSS commands."))
     if keil_projects and not ccxmls:
         messages.append(Message("info", "未发现 targetConfigs/*.ccxml；当前是 Keil 工程，通常通过 `.uvprojx` 和 Keil 调试器配置来验证。"))
     elif keil_projects:
@@ -564,6 +581,78 @@ def check_project(root: Path) -> tuple[list[Message], dict[str, object]]:
     return messages, details
 
 
+def add_probe_check(root: Path, messages: list[Message], details: dict[str, object]) -> None:
+    hints = details.setdefault("validation_hints", {})
+    assert isinstance(hints, dict)
+    detector = Path(__file__).resolve().with_name("detect_probe.py")
+    hints["detect_probe"] = f'python "{detector}"'
+    try:
+        probes = detect_probes()
+    except Exception as exc:  # Keep static checks usable when OS probe enumeration is unavailable.
+        details["connected_probes"] = {"error": str(exc), "probes": []}
+        messages.append(Message("warning", f"Connected probe detection failed: {exc}"))
+        return
+
+    serialized = [asdict(probe) for probe in probes]
+    details["connected_probes"] = {"probes": serialized}
+    if not probes:
+        messages.append(Message("warning", "No supported connected debug probe was detected. Confirm the physical probe before flashing."))
+        return
+    if len(probes) > 1:
+        kinds = ", ".join(probe.kind for probe in probes)
+        messages.append(Message("warning", f"Multiple connected debug probes were detected: {kinds}. Ask the user which probe to use before flashing."))
+    for probe in probes:
+        suffix = f", USB {probe.usb_id}" if probe.usb_id else ""
+        config = f", config {probe.recommended_config}" if probe.recommended_config else ""
+        messages.append(
+            Message(
+                "info",
+                f"Connected probe: {probe.kind} ({probe.display_name}{suffix}). Recommended backend: {probe.recommended_backend}{config}.",
+            )
+        )
+
+    if len(probes) != 1:
+        return
+    connected = probes[0]
+    ccxmls = find_target_configs(root)
+    configured = {describe_target_config(path) for path in ccxmls}
+    configured_probe_kinds = {
+        kind
+        for name, kind in (
+            ("SEGGER J-Link", "jlink"),
+            ("TI XDS110", "xds110"),
+        )
+        if name in configured
+    }
+    mismatch = bool(configured_probe_kinds) and connected.kind not in configured_probe_kinds
+    if mismatch:
+        expected = ", ".join(sorted(configured))
+        for key in ("list_debug_cores", "ccs_dss_probe", "flash", "ccs_dss_run_to_main"):
+            hints.pop(key, None)
+        hints["probe_mismatch"] = "Stop before flashing. Ask the user to confirm the intended probe/backend."
+        messages.append(
+            Message(
+                "warning",
+                f"Connected probe {connected.kind} does not match CCS target config ({expected}). Do not flash through that CCS/DSLite config until the user confirms the backend.",
+            )
+        )
+    if connected.kind == "cmsis-dap":
+        openocd_script = Path(__file__).resolve().with_name("openocd_debug.py")
+        hints["openocd_probe"] = f'python "{openocd_script}" "{root}" probe'
+        outputs = find_output_files(root)
+        if len(outputs) == 1:
+            hints["openocd_flash"] = f'python "{openocd_script}" "{root}" flash --program "{outputs[0]}"'
+        elif len(outputs) > 1:
+            hints["openocd_flash"] = "Multiple program outputs found. Choose one explicitly with openocd_debug.py flash --program <path>."
+            messages.append(Message("warning", "Multiple program outputs were found. OpenOCD flashing requires an explicit --program path."))
+        messages.append(
+            Message(
+                "info",
+                "CMSIS-DAP / DAPLink is connected. Prefer the OpenOCD path with interface/cmsis-dap.cfg unless the project intentionally declares another verified backend.",
+            )
+        )
+
+
 def print_text(root: Path, messages: list[Message], details: dict[str, object]) -> None:
     print(f"MSPM0 SysConfig static check: {root}")
     for msg in messages:
@@ -575,16 +664,20 @@ def print_text(root: Path, messages: list[Message], details: dict[str, object]) 
         print()
         print("Suggested CLI validation chain:")
         for key in (
+            "detect_probe",
             "sysconfig_cli",
             "gmake",
             "cmake_configure",
             "cmake_build",
             "keil_build",
+            "ccs_target_config_selection",
             "list_debug_cores",
             "ccs_dss_probe",
             "flash",
             "ccs_dss_run_to_main",
+            "openocd_probe",
             "openocd_flash",
+            "probe_mismatch",
         ):
             if key in hints:
                 print(f"- {key}: {hints[key]}")
@@ -594,10 +687,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Check an MSPM0 SysConfig project.")
     parser.add_argument("project", nargs="?", default=".", help="Path to a project directory.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
+    parser.add_argument("--probe", action="store_true", help="Also detect connected debug probes and compare them with project hints.")
     args = parser.parse_args()
 
     root = Path(args.project).resolve()
     messages, details = check_project(root)
+    if args.probe:
+        add_probe_check(root, messages, details)
     has_error = any(msg.level == "error" for msg in messages)
 
     if args.json:

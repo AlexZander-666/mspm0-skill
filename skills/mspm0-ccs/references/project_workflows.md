@@ -1,4 +1,4 @@
-# SysConfig And Project Workflow
+# SysConfig And Project Workflows
 
 Use this when editing `.syscfg` or `system.syscfg`, validating a CCS, Keil, or CMake/GCC/OpenOCD project, building, or flashing.
 
@@ -84,6 +84,15 @@ Run the static checker first:
 python scripts\check_syscfg.py <project-dir>
 ```
 
+Before flashing or debugging, add the optional connected-probe check:
+
+```powershell
+python scripts\detect_probe.py
+python scripts\check_syscfg.py <project-dir> --probe
+```
+
+The probe detector is read-only. It should not open the target, erase flash, or reset the MCU. If the physical probe conflicts with CCS `.ccxml` or OpenOCD hints, stop and ask the user to confirm the intended backend before flashing.
+
 Run SysConfig CLI when available. Prefer the exact command generated in `Debug/subdir_rules.mk` when it exists for CCS projects. A fresh project may not have generated makefiles yet; SysConfig CLI can still validate `.syscfg` into a temporary output directory.
 
 Build through the active project's generated build flow when present:
@@ -107,6 +116,8 @@ If no configured build directory exists, configure one using the project's docum
 
 ## DSLite / J-Link Flash
 
+For a vague request such as "flash this project", detect the connected probe before choosing DSLite, J-Link tools, or OpenOCD. Do not assume the user's previous probe is still connected.
+
 The verified flash path is DSLite / UniFlash with J-Link:
 
 ```powershell
@@ -122,16 +133,7 @@ If `dslite -N` hangs or cannot list the core, stop stale CCS/DSLite/J-Link sessi
 
 ## CCS-DSS Debug
 
-For interactive debug actions on CCS / CCS Theia projects, use the CCS Debug Server Scripting backend described in `ccs_dss_debug.md`:
-
-```powershell
-python scripts\ccs_dss_debug.py <project-dir> probe --leave-running
-python scripts\ccs_dss_debug.py <project-dir> run-to-symbol --symbol main --load --reset "System Reset"
-```
-
-This path uses `targetConfigs/*.ccxml`, so it follows the probe configured by the CCS project. It is not inherently limited to J-Link, but the `.ccxml` must match the connected probe such as J-Link or XDS110.
-
-Keep this separate from OpenOCD/GDB debugging. A future OpenOCD debug flow should use an explicit OpenOCD/GDB backend rather than this CCS-DSS wrapper.
+For interactive debug actions on CCS / CCS Theia projects, use the CCS-DSS section in `debug_backends.md`. This path uses `targetConfigs/*.ccxml`, so the file must match the connected probe such as J-Link or XDS110.
 
 ## OpenOCD Flash
 
@@ -142,6 +144,10 @@ openocd -f <probe-or-board.cfg> -c "program <firmware.elf|firmware.hex|firmware.
 ```
 
 Keep the flash backend explicit, for example `--backend dslite` or `--backend openocd`, when writing wrappers or documentation.
+
+## OpenOCD / GDB Debug
+
+For an MSPM0-capable OpenOCD installation, use the OpenOCD/GDB section in `debug_backends.md`. Keep one operation active per probe and do not automatically mass erase, factory reset, or unlock a target.
 
 ## Hardware Claims
 
@@ -155,3 +161,37 @@ Report validation levels separately:
 - serial/logic analyzer observation
 
 Do not report hardware behavior as verified unless it was observed on connected hardware.
+
+## SDK Schema Lookup
+
+Use evidence before authoring unfamiliar `.syscfg` fields or enum values. There is no single friendly MSPM0 field manual listing every module field, enum, solver rule, and clock option.
+
+Use sources in this order:
+
+1. The user's existing `.syscfg`.
+2. Packaged examples under `examples/`.
+3. Local TI MSPM0 SDK `.syscfg` examples.
+4. Local SDK metadata under `source/ti/driverlib/.meta/*.syscfg.js`.
+5. SysConfig GUI or standalone SysConfig output for the same device, package, SDK, and tool version.
+6. Small scaffolds under `assets/snippets/`.
+
+Search local SDK examples and module metadata with:
+
+```powershell
+python scripts\index_syscfg_examples.py C:\ti\mspm0_sdk_2_10_00_04 --board LP_MSPM0G3507 --module UART
+```
+
+Useful SDK paths:
+
+```text
+<mspm0_sdk>/examples/**/*.syscfg
+<mspm0_sdk>/source/ti/driverlib/.meta/GPIO.syscfg.js
+<mspm0_sdk>/source/ti/driverlib/.meta/UART.syscfg.js
+<mspm0_sdk>/source/ti/driverlib/.meta/SYSCTL.syscfg.js
+<mspm0_sdk>/source/ti/driverlib/.meta/PWM.syscfg.js
+<mspm0_sdk>/source/ti/driverlib/.meta/TIMER.syscfg.js
+<mspm0_sdk>/source/ti/driverlib/.meta/ADC12.syscfg.js
+<mspm0_sdk>/source/ti/driverlib/.meta/DMA.syscfg.js
+```
+
+TI `LP_MSPM0G3507` examples are often useful for Tianmengxing MSPM0G3507 work, but board pin maps still need Tianmengxing verification. Do not invent device, package, product, board, version metadata, module fields, or enum values.

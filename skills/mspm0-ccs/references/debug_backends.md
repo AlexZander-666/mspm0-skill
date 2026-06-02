@@ -1,8 +1,19 @@
-# CCS-DSS Debug Backend
+# Debug Backends
 
-Use this reference when the user asks the agent to debug a connected MSPM0 board through CCS / CCS Theia tooling.
+Use this reference when the user asks the agent to flash or debug a connected MSPM0 board. Keep CCS-DSS and OpenOCD/GDB as separate backends.
 
-This is the CCS Debug Server Scripting backend, abbreviated as `ccs-dss` in this skill. It is separate from an OpenOCD + GDB workflow. Do not apply these commands to a CMake/OpenOCD project unless that project also has a valid CCS `.ccxml` and the user explicitly wants to use CCS DSS.
+Before selecting a backend for an unspecified probe, run:
+
+```powershell
+python scripts\detect_probe.py
+python scripts\check_syscfg.py <project-dir> --probe
+```
+
+Probe detection is read-only. Do not flash when multiple probes are connected, detection is unknown, or the physical probe conflicts with project configuration until the user confirms the intended backend.
+
+## CCS-DSS Backend
+
+CCS Debug Server Scripting is abbreviated as `ccs-dss` in this skill. Use it for CCS / CCS Theia / UniFlash tooling. Do not apply these commands to a CMake/OpenOCD project unless that project also has a valid CCS `.ccxml` and the user explicitly wants CCS DSS.
 
 ## Scope
 
@@ -10,7 +21,7 @@ This is the CCS Debug Server Scripting backend, abbreviated as `ccs-dss` in this
 - Requires a valid `targetConfigs/*.ccxml` for the active board and probe.
 - Requires a built CCS `.out` file when loading or reloading firmware.
 - Uses the debug probe selected inside `.ccxml`, so it is not limited to J-Link. It can also work with CCS-supported probes such as XDS110 when the `.ccxml` matches the connected hardware.
-- Does not cover OpenOCD/GDB debugging. Keep that as a future `openocd-gdb` backend.
+- Does not cover OpenOCD/GDB debugging. Use the separate backend below.
 
 ## Safety Rules
 
@@ -106,3 +117,94 @@ Stop and ask the user before continuing if:
 - The board controls motors, high-power outputs, or moving mechanisms and the next step will halt the CPU.
 - The script can connect but loading a new `.out` would overwrite firmware the user did not ask to replace.
 - OpenOCD files are present and the user appears to be using an OpenOCD workflow instead of CCS DSS.
+
+## OpenOCD / GDB Backend
+
+Use this backend when the detected probe and interface configuration are compatible with an MSPM0-capable OpenOCD installation.
+
+### Verified Scope
+
+The packaged helper was verified with:
+
+- MSPM0G3507 hardware
+- CMSIS-DAP / DAPLink probe
+- an MSPM0-capable OpenOCD build containing `target/ti/mspm0.cfg` or `target/ti_mspm0.cfg`
+- `interface/cmsis-dap.cfg`
+- `arm-none-eabi-gdb`
+- a TI Arm Clang-generated CCS `.out` ELF file
+
+The helper can also use `.elf`, `.axf`, `.hex`, and `.bin` outputs. A raw `.bin` requires `--base-address`.
+
+OpenOCD MSPM0 support commonly requires a TI MSPM0-capable build or TI extension branch. Do not assume an unrelated mainline OpenOCD installation can access MSPM0 correctly.
+
+### Commands
+
+```powershell
+python scripts\openocd_debug.py <project-dir> probe
+python scripts\openocd_debug.py <project-dir> flash
+python scripts\openocd_debug.py <project-dir> registers
+python scripts\openocd_debug.py <project-dir> run-to-symbol --symbol main
+```
+
+Other available actions:
+
+```powershell
+python scripts\openocd_debug.py <project-dir> run
+python scripts\openocd_debug.py <project-dir> reset
+```
+
+Default config and fallback speeds:
+
+```text
+interface/cmsis-dap.cfg
+target/ti/mspm0.cfg or target/ti_mspm0.cfg, auto-detected from the OpenOCD installation
+24000,1000,500 kHz
+```
+
+Override them only when the connected probe, target support package, or project requires a different choice:
+
+```powershell
+python scripts\openocd_debug.py <project-dir> --interface <interface.cfg> --target <target.cfg> --speeds 24000,1000,500 probe
+```
+
+### Flash Behavior
+
+`flash` auto-detects a compatible program output under the project directory, then performs:
+
+```text
+init
+reset init
+flash write_image erase <program>
+verify_image <program>
+reset run
+shutdown
+```
+
+The helper searches CCS `Debug`/`Release`, generic `build`, CLion-style `cmake-build-*`, and the project root. Use `--program <path>` when several outputs exist and the automatic choice is ambiguous. Use `--no-verify` only when the user explicitly accepts losing verification.
+
+### Connection Failures And Retries
+
+The helper separates probe and transport failures from firmware failures. Its default retry order is `24000`, `1000`, then `500` kHz.
+
+- `unable to find a matching CMSIS-DAP device`: probe discovery failure. Check USB or wireless DAPLink connectivity.
+- `CMSIS-DAP command mismatch` or `CMD_CONNECT failed`: likely link corruption, wireless interruption, or another process holding the probe.
+- target halt, SWD ACK, or DAP access failures: retry after reconnecting and lowering speed; if repeated, check wiring and ask whether the target needs manual unlock.
+- verify failure: retry with a stable connection and lower speed before changing commands.
+
+Do not run parallel OpenOCD operations against one probe. Flash, register reads, and GDB sessions can contend with each other.
+
+### Locked Or Protected Targets
+
+The helper intentionally does not perform automatic unlock, mass erase, or factory reset operations.
+
+If it reports `target_locked_or_protected`, stop retries and ask the user to run their known manual unlock or recovery procedure. This avoids destructive recovery when a transient wireless failure merely resembles a target-access problem.
+
+### OpenOCD Debug Safety
+
+`probe` and `registers` briefly halt the current CPU state without resetting the target, then restore execution before the one-shot OpenOCD server exits. `run-to-symbol` intentionally resets and runs to the requested breakpoint. Before using debug actions on motors, power electronics, or other real-time control systems:
+
+1. Warn the user that debug actions may pause control loops.
+2. Put actuators into a safe state when possible.
+3. Do not promise that a one-shot OpenOCD command can leave the target halted after the server exits. Use a separately managed persistent OpenOCD session when a paused target must remain under debugger control.
+
+`run-to-symbol` refuses to attach when its GDB port is already occupied. Close the existing OpenOCD/debug session or choose an unused `--gdb-port`; do not attach to an unverified listener.
