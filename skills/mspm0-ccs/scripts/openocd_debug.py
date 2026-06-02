@@ -23,7 +23,7 @@ from typing import Callable
 
 
 DEFAULT_INTERFACE_CFG = "interface/cmsis-dap.cfg"
-DEFAULT_TARGET_CFG = "target/ti_mspm0.cfg"
+DEFAULT_TARGET_CFGS = ("target/ti/mspm0.cfg", "target/ti_mspm0.cfg")
 DEFAULT_SPEEDS = (24000, 1000, 500)
 PROGRAM_SUFFIXES = (".out", ".elf", ".axf", ".hex", ".bin")
 
@@ -63,6 +63,22 @@ def find_openocd(explicit: str | None) -> Path:
         candidates.append(Path(discovered))
 
     return find_existing(candidates, "OpenOCD executable; use --openocd")
+
+
+def find_target_cfg(openocd_path: Path, explicit: str | None) -> str:
+    if explicit:
+        return explicit
+
+    roots: list[Path] = []
+    env_value = os.environ.get("OPENOCD_SCRIPTS")
+    if env_value:
+        roots.append(Path(env_value))
+    prefix = openocd_path.resolve().parent.parent
+    roots.extend((prefix / "share" / "openocd" / "scripts", prefix / "scripts"))
+    for candidate in DEFAULT_TARGET_CFGS:
+        if any((root / candidate).exists() for root in roots):
+            return candidate
+    return DEFAULT_TARGET_CFGS[0]
 
 
 def find_gdb(explicit: str | None) -> Path:
@@ -415,9 +431,7 @@ def run_to_symbol_once(args: argparse.Namespace, speed: int, program: Path, symb
             "-ex",
             "delete breakpoints",
         ]
-        if not args.leave_halted:
-            gdb_commands.extend(["-ex", "monitor resume"])
-        gdb_commands.extend(["-ex", "detach", "-ex", "quit"])
+        gdb_commands.extend(["-ex", "monitor resume", "-ex", "detach", "-ex", "quit"])
         emit("gdb", argv=gdb_commands)
         try:
             completed = subprocess.run(
@@ -487,7 +501,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("project_dir", help="MSPM0 project directory")
     parser.add_argument("--openocd", help="Path to openocd executable")
     parser.add_argument("--interface", dest="interface_cfg", default=DEFAULT_INTERFACE_CFG, help="OpenOCD interface cfg")
-    parser.add_argument("--target", dest="target_cfg", default=DEFAULT_TARGET_CFG, help="OpenOCD target cfg")
+    parser.add_argument("--target", dest="target_cfg", help="OpenOCD target cfg; auto-detected by default")
     parser.add_argument(
         "--speeds",
         type=parse_speeds,
@@ -505,7 +519,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     probe = subparsers.add_parser("probe", help="Connect, halt, report target state, then resume")
-    probe.add_argument("--leave-halted", action="store_true", help="Leave target halted")
 
     flash = subparsers.add_parser("flash", help="Flash an ELF/OUT/AXF/HEX/BIN program and optionally verify")
     flash.add_argument("--program", help="Program output path; auto-detected from the project by default")
@@ -513,13 +526,10 @@ def build_parser() -> argparse.ArgumentParser:
     flash.add_argument("--no-verify", action="store_true", help="Skip verify_image")
 
     registers = subparsers.add_parser("registers", help="Halt and print core registers")
-    registers.add_argument("--leave-halted", action="store_true", help="Leave target halted")
 
-    subparsers.add_parser("halt", help="Halt the target")
     subparsers.add_parser("run", help="Resume the target")
 
-    reset = subparsers.add_parser("reset", help="Reset the target")
-    reset.add_argument("--halt", action="store_true", help="Halt after reset instead of running")
+    subparsers.add_parser("reset", help="Reset and run the target")
 
     symbol = subparsers.add_parser("run-to-symbol", help="Use OpenOCD + GDB to reset and run to a symbol breakpoint")
     symbol.add_argument("--program", help="Program output path; auto-detected from the project by default")
@@ -527,7 +537,6 @@ def build_parser() -> argparse.ArgumentParser:
     symbol.add_argument("--gdb", help="Path to arm-none-eabi-gdb")
     symbol.add_argument("--gdb-port", type=int, default=3333, help="OpenOCD GDB port. Default: 3333")
     symbol.add_argument("--server-timeout", type=float, default=5, help="Seconds to wait for OpenOCD GDB server")
-    symbol.add_argument("--leave-halted", action="store_true", help="Leave target halted after breakpoint inspection")
     return parser
 
 
@@ -542,6 +551,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.retry_delay < 0:
         parser.error("--retry-delay cannot be negative")
     args.openocd_path = find_openocd(args.openocd)
+    args.target_cfg = find_target_cfg(args.openocd_path, args.target_cfg)
     emit(
         "wrapper",
         backend="openocd",
@@ -554,8 +564,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.command == "probe":
-        final = "shutdown" if args.leave_halted else "resume; shutdown"
-        return run_with_retries(args, "probe", lambda _speed: f"init; reset run; sleep 300; halt; targets; {final}")
+        return run_with_retries(args, "probe", lambda _speed: "init; reset run; sleep 300; halt; targets; resume; shutdown")
     if args.command == "flash":
         program = find_program(args.project_dir, args.program)
         emit("program", path=str(program), suffix=program.suffix.lower())
@@ -565,22 +574,18 @@ def main(argv: list[str] | None = None) -> int:
             lambda _speed: flash_commands(program, args.base_address, verify=not args.no_verify),
         )
     if args.command == "registers":
-        final = "shutdown" if args.leave_halted else "resume; shutdown"
         return run_with_retries(
             args,
             "registers",
             lambda _speed: (
                 f"init; reset run; sleep 300; halt; "
-                f"echo [reg pc]; echo [reg sp]; echo [reg lr]; echo [reg xpsr]; {final}"
+                f"echo [reg pc]; echo [reg sp]; echo [reg lr]; echo [reg xpsr]; resume; shutdown"
             ),
         )
-    if args.command == "halt":
-        return run_with_retries(args, "halt", lambda _speed: "init; halt; targets; shutdown")
     if args.command == "run":
         return run_with_retries(args, "run", lambda _speed: "init; resume; shutdown")
     if args.command == "reset":
-        reset_mode = "reset halt" if args.halt else "reset run"
-        return run_with_retries(args, "reset", lambda _speed: f"init; {reset_mode}; shutdown")
+        return run_with_retries(args, "reset", lambda _speed: "init; reset run; shutdown")
     if args.command == "run-to-symbol":
         if not re.fullmatch(r"[A-Za-z_.$][A-Za-z0-9_.$:]*", args.symbol):
             parser.error("--symbol contains unsupported characters")

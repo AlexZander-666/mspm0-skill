@@ -128,7 +128,7 @@ The packaged helper was verified with:
 
 - MSPM0G3507 hardware
 - CMSIS-DAP / DAPLink probe
-- an MSPM0-capable OpenOCD build containing `target/ti_mspm0.cfg`
+- an MSPM0-capable OpenOCD build containing `target/ti/mspm0.cfg` or `target/ti_mspm0.cfg`
 - `interface/cmsis-dap.cfg`
 - `arm-none-eabi-gdb`
 - a TI Arm Clang-generated CCS `.out` ELF file
@@ -149,17 +149,15 @@ python scripts\openocd_debug.py <project-dir> run-to-symbol --symbol main
 Other available actions:
 
 ```powershell
-python scripts\openocd_debug.py <project-dir> halt
 python scripts\openocd_debug.py <project-dir> run
 python scripts\openocd_debug.py <project-dir> reset
-python scripts\openocd_debug.py <project-dir> reset --halt
 ```
 
 Default config and fallback speeds:
 
 ```text
 interface/cmsis-dap.cfg
-target/ti_mspm0.cfg
+target/ti/mspm0.cfg or target/ti_mspm0.cfg, auto-detected from the OpenOCD installation
 24000,1000,500 kHz
 ```
 
@@ -204,8 +202,8 @@ If it reports `target_locked_or_protected`, stop retries and ask the user to run
 
 ### OpenOCD Debug Safety
 
-`probe`, `registers`, `halt`, `reset --halt`, and `run-to-symbol` can halt the CPU. Before using them on motors, power electronics, or other real-time control systems:
+`probe`, `registers`, and `run-to-symbol` briefly halt the CPU while the helper is active, then restore target execution before the one-shot OpenOCD server exits. Before using them on motors, power electronics, or other real-time control systems:
 
 1. Warn the user that debug actions may pause control loops.
 2. Put actuators into a safe state when possible.
-3. Avoid leaving the target halted unless the user requests it.
+3. Do not promise that a one-shot OpenOCD command can leave the target halted after the server exits. Use a separately managed persistent OpenOCD session when a paused target must remain under debugger control.
