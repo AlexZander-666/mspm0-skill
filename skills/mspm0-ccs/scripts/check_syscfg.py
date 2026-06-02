@@ -7,9 +7,14 @@ import argparse
 import json
 import os
 import re
+import sys
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Iterable
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
 
 from detect_probe import detect_probes
 
@@ -268,11 +273,13 @@ def find_validation_hints(root: Path) -> dict[str, str]:
         hints["list_debug_cores"] = f'dslite -c "{ccxmls[0]}" -N'
         dss_script = Path(__file__).resolve().with_name("ccs_dss_debug.py")
         hints["ccs_dss_probe"] = f'python "{dss_script}" "{root}" probe --leave-running'
-    if ccxmls and dslite_flash_outputs:
+    if ccxmls and len(dslite_flash_outputs) == 1:
         hints["flash"] = f'dslite -c "{ccxmls[0]}" -e -r 2 -u "{dslite_flash_outputs[0]}"'
         hints["ccs_dss_run_to_main"] = (
             f'python "{dss_script}" "{root}" run-to-symbol --symbol main --load --reset "System Reset"'
         )
+    elif ccxmls and len(dslite_flash_outputs) > 1:
+        hints["flash"] = "Multiple program outputs found. Choose the intended output explicitly before flashing with DSLite."
 
     keil_projects = find_keil_projects(root)
     if keil_projects:
@@ -290,8 +297,10 @@ def find_validation_hints(root: Path) -> dict[str, str]:
         flash_target = cmake_info.get("flash_target")
         if build_dir and flash_target:
             hints["openocd_flash"] = f'cmake --build "{build_dir}" --target {flash_target}'
-        elif cmake_info["openocd_configs"] and openocd_flash_outputs:
+        elif cmake_info["openocd_configs"] and len(openocd_flash_outputs) == 1:
             hints["openocd_flash"] = f'openocd -f "{cmake_info["openocd_configs"][0]}" -c "program \\"{openocd_flash_outputs[0]}\\" verify reset exit"'
+        elif cmake_info["openocd_configs"] and len(openocd_flash_outputs) > 1:
+            hints["openocd_flash"] = "Multiple OpenOCD-compatible outputs found. Choose the intended output explicitly before flashing."
     return hints
 
 
@@ -618,8 +627,12 @@ def add_probe_check(root: Path, messages: list[Message], details: dict[str, obje
     if connected.kind == "cmsis-dap":
         openocd_script = Path(__file__).resolve().with_name("openocd_debug.py")
         hints["openocd_probe"] = f'python "{openocd_script}" "{root}" probe'
-        if find_output_files(root):
-            hints["openocd_flash"] = f'python "{openocd_script}" "{root}" flash'
+        outputs = find_output_files(root)
+        if len(outputs) == 1:
+            hints["openocd_flash"] = f'python "{openocd_script}" "{root}" flash --program "{outputs[0]}"'
+        elif len(outputs) > 1:
+            hints["openocd_flash"] = "Multiple program outputs found. Choose one explicitly with openocd_debug.py flash --program <path>."
+            messages.append(Message("warning", "Multiple program outputs were found. OpenOCD flashing requires an explicit --program path."))
         messages.append(
             Message(
                 "info",

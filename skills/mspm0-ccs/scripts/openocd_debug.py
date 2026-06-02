@@ -90,7 +90,13 @@ def find_program(project_dir: Path, explicit: str | None) -> Path:
             candidates.extend(sorted(root.rglob(f"*{suffix}")))
     for suffix in PROGRAM_SUFFIXES:
         candidates.extend(sorted(project_dir.glob(f"*{suffix}")))
-    return find_existing(candidates, "program output (*.out, *.elf, *.axf, *.hex, *.bin); use --program")
+    existing = sorted({path.resolve() for path in candidates if path.exists()}, key=lambda path: str(path).lower())
+    if not existing:
+        raise SystemExit("error: could not find program output (*.out, *.elf, *.axf, *.hex, *.bin); use --program")
+    if len(existing) > 1:
+        choices = "\n".join(f"  - {path}" for path in existing)
+        raise SystemExit(f"error: found multiple program outputs; choose one explicitly with --program:\n{choices}")
+    return existing[0]
 
 
 def parse_speeds(value: str) -> list[int]:
@@ -207,6 +213,25 @@ def classify_failure(output: str, timed_out: bool = False) -> tuple[str, str]:
     )
 
 
+def normalize_subprocess_stream(value: str | bytes | None) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value or ""
+
+
+def breakpoint_was_hit(gdb_output: str) -> bool:
+    created = re.search(r"(?m)^Breakpoint (\d+) at\b", gdb_output)
+    if not created:
+        return False
+    return re.search(rf"(?m)^Breakpoint {re.escape(created.group(1))},\s+", gdb_output) is not None
+
+
+def print_output(output: str) -> None:
+    encoding = sys.stdout.encoding or "utf-8"
+    safe_output = output.encode(encoding, errors="replace").decode(encoding, errors="replace")
+    print(safe_output, end="" if safe_output.endswith("\n") else "\n")
+
+
 def should_retry(category: str) -> bool:
     return category in {
         "probe_not_found",
@@ -246,16 +271,14 @@ def run_openocd_once(args: argparse.Namespace, speed: int, commands: str) -> Att
             timeout=args.process_timeout,
         )
         output = completed.stdout + completed.stderr
-        print(output, end="" if output.endswith("\n") else "\n")
+        print_output(output)
         if completed.returncode == 0:
             return AttemptResult(True, 0, output, "success", "OpenOCD command completed.", speed)
         category, guidance = classify_failure(output)
         return AttemptResult(False, completed.returncode, output, category, guidance, speed)
     except subprocess.TimeoutExpired as exc:
-        output = (exc.stdout or "") + (exc.stderr or "")
-        if isinstance(output, bytes):
-            output = output.decode("utf-8", errors="replace")
-        print(output, end="" if output.endswith("\n") else "\n")
+        output = normalize_subprocess_stream(exc.stdout) + normalize_subprocess_stream(exc.stderr)
+        print_output(output)
         category, guidance = classify_failure(output, timed_out=True)
         return AttemptResult(False, 124, output, category, guidance, speed)
 
@@ -266,6 +289,7 @@ def run_with_retries(
     command_builder: Callable[[int], str],
 ) -> int:
     attempts = 0
+    result: AttemptResult | None = None
     for speed in args.speeds:
         for _ in range(args.attempts_per_speed):
             attempts += 1
@@ -287,6 +311,10 @@ def run_with_retries(
                 return result.returncode or 1
             time.sleep(args.retry_delay)
 
+    if result is None:
+        guidance = "No adapter speeds were provided. Pass at least one positive speed with --speeds."
+        emit("failed", operation=operation, attempts=attempts, category="invalid_arguments", guidance=guidance)
+        return 2
     emit(
         "failed",
         operation=operation,
@@ -360,7 +388,7 @@ def run_to_symbol_once(args: argparse.Namespace, speed: int, program: Path, symb
     try:
         if not wait_for_port("127.0.0.1", port, process, args.server_timeout):
             output = terminate_process(process)
-            print(output, end="" if output.endswith("\n") else "\n")
+            print_output(output)
             category, guidance = classify_failure(output, timed_out=process.returncode is None)
             return AttemptResult(False, process.returncode or 1, output, category, guidance, speed)
 
@@ -402,19 +430,17 @@ def run_to_symbol_once(args: argparse.Namespace, speed: int, program: Path, symb
             )
             gdb_output = completed.stdout + completed.stderr
         except subprocess.TimeoutExpired as exc:
-            gdb_output = (exc.stdout or "") + (exc.stderr or "")
-            if isinstance(gdb_output, bytes):
-                gdb_output = gdb_output.decode("utf-8", errors="replace")
+            gdb_output = normalize_subprocess_stream(exc.stdout) + normalize_subprocess_stream(exc.stderr)
             server_output = terminate_process(process)
             output = server_output + gdb_output
-            print(output, end="" if output.endswith("\n") else "\n")
+            print_output(output)
             category, guidance = classify_failure(output, timed_out=True)
             return AttemptResult(False, 124, output, category, guidance, speed)
 
         server_output = terminate_process(process)
         output = server_output + gdb_output
-        print(output, end="" if output.endswith("\n") else "\n")
-        if completed.returncode == 0 and "Breakpoint " in gdb_output:
+        print_output(output)
+        if completed.returncode == 0 and breakpoint_was_hit(gdb_output):
             return AttemptResult(True, 0, output, "success", "GDB hit the requested symbol breakpoint.", speed)
         category, guidance = classify_failure(output)
         return AttemptResult(False, completed.returncode or 1, output, category, guidance, speed)
@@ -425,6 +451,7 @@ def run_to_symbol_once(args: argparse.Namespace, speed: int, program: Path, symb
 
 def run_to_symbol(args: argparse.Namespace, program: Path, symbol: str) -> int:
     attempts = 0
+    result: AttemptResult | None = None
     for speed in args.speeds:
         for _ in range(args.attempts_per_speed):
             attempts += 1
@@ -446,6 +473,10 @@ def run_to_symbol(args: argparse.Namespace, program: Path, symbol: str) -> int:
                 return result.returncode or 1
             time.sleep(args.retry_delay)
 
+    if result is None:
+        guidance = "No adapter speeds were provided. Pass at least one positive speed with --speeds."
+        emit("failed", operation="run-to-symbol", attempts=attempts, category="invalid_arguments", guidance=guidance)
+        return 2
     emit("failed", operation="run-to-symbol", attempts=attempts, category=result.category, guidance=result.guidance)
     return result.returncode or 1
 

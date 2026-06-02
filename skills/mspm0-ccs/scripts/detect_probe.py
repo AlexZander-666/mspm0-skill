@@ -185,9 +185,10 @@ def detect_windows() -> list[Probe]:
             vid, pid = usb_id.split(":", maxsplit=1)
             ports = sorted(
                 {
-                    port["DeviceID"]
+                    port.get("DeviceID", "")
                     for port in serial_ports
-                    if f"VID_{vid}&PID_{pid}" in port["PNPDeviceID"].upper()
+                    if f"VID_{vid}&PID_{pid}" in port.get("PNPDeviceID", "").upper()
+                    and port.get("DeviceID")
                 }
             )
         probes.append(
