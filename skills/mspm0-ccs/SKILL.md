@@ -36,8 +36,9 @@ Use this skill for TI MSPM0 firmware projects that use SysConfig and DriverLib t
 
 When the user explicitly says the board is LCKFB Tianmengxing MSPM0G3507:
 
-- Avoid choosing A21/PA21, A23/PA23, A02/PA02, A18/PA18, A10/PA10, and A11/PA11 for ordinary user-requested pin assignments unless the user asks for those pins or the local project already deliberately uses them.
-- If the user asks to drive or reuse one of those pins, remind them that the Tianmengxing documentation marks these as special pins and says they should not be used unless necessary.
+- Avoid choosing A21/PA21, A23/PA23, A02/PA02, and A18/PA18 for ordinary user-requested pin assignments unless the user asks for those pins or the local project already deliberately uses them.
+- PA10 and PA11 are also marked as special, but Tianmengxing routes them as the default UART pins. When choosing pins for a UART, consider PA10 TX and PA11 RX first if they are free and match the requested UART instance. For GPIO, PWM, SPI, I2C, timer, or other non-UART uses, continue to treat PA10/PA11 as special pins and prefer other available pins.
+- If the user asks to drive or reuse one of these special pins for a non-default purpose, remind them of the Tianmengxing board note. In particular, explain that repurposing PA10/PA11 can conflict with or remove the board's default UART connection.
 - Do not silently move an existing project away from these pins. Explain the board caveat first, then ask or proceed according to the user's intent.
 
 ## Project Shape Checks
