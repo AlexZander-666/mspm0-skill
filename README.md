@@ -83,24 +83,23 @@ Copy-Item -Recurse -Force .\skills\mspm0-ccs "$env:USERPROFILE\.claude\skills\ms
 
 ## 使用示例
 
-Claude Code 调用 skill 配置 MSPM0G3507 工程：
+### 完整实战：2024 年电赛 H 题
 
-![Claude Code 调用 mspm0-ccs skill](skills/mspm0-ccs/assets/screenshots/claude-code-skill-start.png)
+**[2024hVibe - 全程使用本 skill 完成 2024 年电赛 H 题](https://github.com/mc3545dada/2024hVibe)**
 
-编译、烧录后的总结：
+该仓库包含全程仅使用本 skill 进行 Agent 辅助开发所完成的代码和 Agent 对话记录，可作为从需求分析、工程修改到调试验证的端到端参考。
+
+配套视频：[2024 年电赛 H 题完整实战演示](https://www.bilibili.com/video/BV1w9Nc69EXP/)
+
+Claude Code 完成 SysConfig、编译和烧录后的总结：
 
 ![Claude Code 完成 SysConfig、编译和烧录后的总结](skills/mspm0-ccs/assets/screenshots/claude-code-summary.png)
 
 Codex 配置外设并用 VOFA+ 查看串口输出：
 
-![Codex 调用 mspm0-ccs skill 配置工程](skills/mspm0-ccs/assets/screenshots/codex-ask.png)
+![VOFA+ 串口输出](skills/mspm0-ccs/assets/screenshots/vofa-output.png)
 
-![Codex 调用 mspm0-ccs skill 配置工程](skills/mspm0-ccs/assets/screenshots/vofa-output.png)
 完整演示视频：[Bilibili 完整使用视频](https://www.bilibili.com/video/BV1RbLY6xECu)
-
-完整实战项目：[2024hVibe - 使用本 skill 完成 2024 年电赛 H 题](https://github.com/mc3545dada/2024hVibe)
-
-该仓库包含全程仅使用本 skill 进行 Agent 辅助开发所完成的代码和 Agent 对话记录，可作为从需求分析、工程修改到调试验证的端到端参考。
 
 更多截图见：`skills/mspm0-ccs/assets/screenshots/`
 
