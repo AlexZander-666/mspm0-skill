@@ -98,6 +98,10 @@ Codex 配置外设并用 VOFA+ 查看串口输出：
 ![Codex 调用 mspm0-ccs skill 配置工程](skills/mspm0-ccs/assets/screenshots/vofa-output.png)
 完整演示视频：[Bilibili 完整使用视频](https://www.bilibili.com/video/BV1RbLY6xECu)
 
+完整实战项目：[2024hVibe - 使用本 skill 完成 2024 年电赛 H 题](https://github.com/mc3545dada/2024hVibe)
+
+该仓库包含全程仅使用本 skill 进行 Agent 辅助开发所完成的代码和 Agent 对话记录，可作为从需求分析、工程修改到调试验证的端到端参考。
+
 更多截图见：`skills/mspm0-ccs/assets/screenshots/`
 
 ## 常用脚本示例
