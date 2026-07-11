@@ -21,7 +21,9 @@ Other boards, packages, SDK versions, CCS versions, probes, and pin maps may wor
 
 The LCKFB Tianmengxing documentation marks A21, A23, A02, A18, A10, and A11 as special pins and says they should not be used unless necessary. In SysConfig or generated headers these may appear as PA21, PA23, PA02, PA18, PA10, and PA11.
 
-When the user asks the agent to choose pins for normal GPIO, PWM, UART, SPI, I2C, timer capture, or similar tasks on Tianmengxing, prefer other available pins first. If the user explicitly requests one of these pins, or an existing project already uses one, warn about the board note before changing or depending on it.
+PA10 and PA11 need a narrower rule than the other special pins because Tianmengxing routes them as its default UART connection. When the user asks the agent to choose UART pins, PA10 TX and PA11 RX are preferred candidates if they are free and compatible with the selected UART instance. This pairing is also the verified UART0 baseline used by this skill.
+
+For GPIO, PWM, SPI, I2C, timer capture, or other non-UART functions, continue to treat PA10/PA11 as special and prefer other available pins. Repurposing them may conflict with or remove the board's default UART connection, so explain that consequence first. For A21/PA21, A23/PA23, A02/PA02, and A18/PA18, prefer other available pins for ordinary assignments unless the user explicitly requests them or the existing project already deliberately uses them.
 
 ## PB22 LED Lessons
 
