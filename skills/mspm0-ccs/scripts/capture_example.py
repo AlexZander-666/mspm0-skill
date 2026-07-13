@@ -180,6 +180,9 @@ def resolve_example_destination(examples_dir: Path, name: str) -> Path:
         )
 
     root = examples_dir.expanduser().resolve()
+    if root.exists() and not root.is_dir():
+        raise SystemExit(f"Examples path is not a directory: {root}")
+
     dest = (root / name).resolve()
     try:
         dest.relative_to(root)

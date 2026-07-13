@@ -26,6 +26,14 @@ class CaptureExampleSafetyTests(unittest.TestCase):
             destination = capture_example.resolve_example_destination(examples_dir, "uart-dma_1")
             self.assertEqual(destination, (examples_dir / "uart-dma_1").resolve())
 
+    def test_rejects_examples_root_that_is_a_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            examples_dir = Path(temp_dir) / "examples"
+            examples_dir.write_text("not a directory", encoding="utf-8")
+
+            with self.assertRaisesRegex(SystemExit, "not a directory"):
+                capture_example.resolve_example_destination(examples_dir, "uart-dma")
+
     def test_explicit_syscfg_must_stay_inside_project(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
