@@ -86,6 +86,8 @@ Useful options:
 - `--symbols`: load debug symbols from `.out` without programming flash for commands that support it.
 - `--leave-running`: remove breakpoints and continue target execution before disconnecting, where supported by the chosen command.
 
+When a project contains multiple `.ccxml` files or a command that needs a program finds multiple `.out` files, pass `--ccxml` or `--out` explicitly. The helper refuses to guess because selecting an old build or a target configuration for the wrong probe can produce misleading results or program unintended firmware.
+
 ## Verified Notes
 
 Validated on LCKFB Tianmengxing MSPM0G3507 + CCS / CCS Theia + J-Link with a CCS project containing `targetConfigs/MSPM0G3507.ccxml` and `Debug/<project>.out`.

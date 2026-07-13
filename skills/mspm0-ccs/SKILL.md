@@ -123,6 +123,8 @@ When applying an example to a user project:
 
 ## Tools
 
+Run bundled scripts with Python 3.10 or newer. `serial_console.py` additionally requires `pyserial`; if import fails, tell the user to run `python -m pip install pyserial`. TI SDK, SysConfig, CCS/UniFlash, OpenOCD, and GDB remain external workflow dependencies and are not installed by this skill.
+
 - `python scripts/check_syscfg.py <project-dir>`: static project check for `.syscfg`, generated files, pins, init spelling, project shape, CCS/Keil/CMake/OpenOCD clues, build output, target config, and validation hints.
 - `python scripts/detect_probe.py`: read-only connected-probe detection for common CMSIS-DAP/DAPLink, J-Link, XDS110, and ST-Link hardware.
 - `python scripts/check_syscfg.py <project-dir> --probe`: run the static check, detect connected probes, compare them with project hints, and suppress unsafe flash suggestions when a CCS `.ccxml` conflicts with the physical probe.
