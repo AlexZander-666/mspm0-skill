@@ -37,6 +37,7 @@ DEFAULT_EXCLUDES = [
     "**/device.opt",
     "**/device.cmd.genlibs",
 ]
+EXAMPLE_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 
 
 def read_text(path: Path) -> str:
@@ -61,7 +62,11 @@ def matches_any(value: str, patterns: Iterable[str]) -> bool:
 def find_syscfg(project: Path, explicit: str | None) -> Path:
     if explicit:
         path = (project / explicit).resolve()
-        if not path.exists():
+        try:
+            path.relative_to(project)
+        except ValueError as exc:
+            raise SystemExit(f"SysConfig file must stay inside the source project: {path}") from exc
+        if not path.is_file() or path.suffix.lower() != ".syscfg":
             raise SystemExit(f"SysConfig file not found: {path}")
         return path
 
@@ -168,6 +173,21 @@ def bool_arg(value: str) -> bool:
     raise argparse.ArgumentTypeError("expected true or false")
 
 
+def resolve_example_destination(examples_dir: Path, name: str) -> Path:
+    if not EXAMPLE_NAME_RE.fullmatch(name):
+        raise SystemExit(
+            "Example name must start with a letter or digit and contain only letters, digits, '-' or '_'."
+        )
+
+    root = examples_dir.expanduser().resolve()
+    dest = (root / name).resolve()
+    try:
+        dest.relative_to(root)
+    except ValueError as exc:
+        raise SystemExit(f"Example destination must stay inside the examples directory: {dest}") from exc
+    return dest
+
+
 def write_readme(dest: Path, manifest: dict[str, Any]) -> None:
     lines = [
         f"# {manifest['title']}",
@@ -223,13 +243,15 @@ def main() -> int:
     args = parser.parse_args()
 
     project = args.project.resolve()
-    if not project.exists():
+    if not project.is_dir():
         raise SystemExit(f"Project directory not found: {project}")
 
-    dest = (args.examples_dir / args.name).resolve()
+    dest = resolve_example_destination(args.examples_dir, args.name)
     if dest.exists():
         if not args.force:
             raise SystemExit(f"Destination exists: {dest}. Pass --force to overwrite.")
+        if not dest.is_dir() or dest.is_symlink():
+            raise SystemExit(f"Refusing to overwrite a non-directory or symlink destination: {dest}")
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
     src_dest = dest / "src"

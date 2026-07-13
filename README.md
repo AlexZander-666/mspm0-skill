@@ -35,6 +35,12 @@ New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\skills" | Out-Null
 Copy-Item -Recurse -Force .\skills\mspm0-ccs "$env:USERPROFILE\.claude\skills\mspm0-ccs"
 ```
 
+## 运行环境
+
+- 辅助脚本需要 Python 3.10 或更高版本。
+- 串口工具 `serial_console.py` 额外需要 `pyserial`：`python -m pip install pyserial`。
+- SDK、SysConfig、CCS/UniFlash、OpenOCD、GDB 等开发工具不会随 skill 自动安装；只需按实际使用的工作流准备对应工具。
+
 ## 快速使用
 
 安装后，在 MSPM0 工程目录中可以这样要求 Agent：
@@ -93,15 +99,15 @@ Copy-Item -Recurse -Force .\skills\mspm0-ccs "$env:USERPROFILE\.claude\skills\ms
 
 Claude Code 完成 SysConfig、编译和烧录后的总结：
 
-![Claude Code 完成 SysConfig、编译和烧录后的总结](skills/mspm0-ccs/assets/screenshots/claude-code-summary.png)
+![Claude Code 完成 SysConfig、编译和烧录后的总结](assets/screenshots/claude-code-summary.png)
 
 Codex 配置外设并用 VOFA+ 查看串口输出：
 
-![VOFA+ 串口输出](skills/mspm0-ccs/assets/screenshots/vofa-output.png)
+![VOFA+ 串口输出](assets/screenshots/vofa-output.png)
 
 完整演示视频：[Bilibili 完整使用视频](https://www.bilibili.com/video/BV1RbLY6xECu)
 
-更多截图见：`skills/mspm0-ccs/assets/screenshots/`
+更多截图见：`assets/screenshots/`
 
 ## 常用脚本示例
 

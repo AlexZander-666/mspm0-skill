@@ -64,24 +64,46 @@ def find_run_bat(explicit: str | None) -> Path:
 
 def find_ccxml(project_dir: Path, explicit: str | None) -> Path:
     if explicit:
-        return find_first([Path(explicit)], "target .ccxml")
+        path = Path(explicit)
+        if not path.is_absolute():
+            path = project_dir / path
+        path = path.resolve()
+        if not path.is_file() or path.suffix.lower() != ".ccxml":
+            raise SystemExit(f"error: could not find target .ccxml: {path}")
+        return path
     preferred = sorted((project_dir / "targetConfigs").glob("*.ccxml"))
     fallback = sorted(project_dir.rglob("*.ccxml"))
-    return find_first(preferred + fallback, "target .ccxml")
+    candidates = sorted({path.resolve() for path in preferred + fallback}, key=lambda path: str(path).lower())
+    if not candidates:
+        raise SystemExit("error: could not find target .ccxml")
+    if len(candidates) > 1:
+        choices = "\n".join(f"  - {path}" for path in candidates)
+        raise SystemExit(f"error: found multiple target .ccxml files; choose one explicitly with --ccxml:\n{choices}")
+    return candidates[0]
 
 
 def find_program(project_dir: Path, explicit: str | None, required: bool) -> Path | None:
     if explicit:
-        return find_first([Path(explicit)], "program output")
+        path = Path(explicit)
+        if not path.is_absolute():
+            path = project_dir / path
+        path = path.resolve()
+        if not path.is_file() or path.suffix.lower() != ".out":
+            raise SystemExit(f"error: could not find program output: {path}")
+        return path
+    if not required:
+        return None
     candidates: list[Path] = []
     for build_dir in ("Debug", "Release"):
         candidates.extend(sorted((project_dir / build_dir).glob("*.out")))
     candidates.extend(sorted(project_dir.rglob("*.out")))
-    if candidates:
-        return candidates[0]
-    if required:
+    candidates = sorted({path.resolve() for path in candidates}, key=lambda path: str(path).lower())
+    if not candidates:
         raise SystemExit("error: could not find program output (*.out)")
-    return None
+    if len(candidates) > 1:
+        choices = "\n".join(f"  - {path}" for path in candidates)
+        raise SystemExit(f"error: found multiple program outputs; choose one explicitly with --out:\n{choices}")
+    return candidates[0]
 
 
 def js_prelude(timeout_ms: int, ccxml: Path) -> str:
