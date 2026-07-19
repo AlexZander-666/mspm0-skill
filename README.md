@@ -1,133 +1,170 @@
+<div align="center">
+
 # MSPM0 Skill
 
-面向 TI MSPM0 + SysConfig + DriverLib 的 AI 编程助手 skill 包。
+**让 AI Agent 真正参与 MSPM0 的 SysConfig 配置、工程构建、烧录与调试。**
 
-它主要服务于国内 MSPM0 开发、电赛备赛、TI 官方开发板和立创天猛星 MSPM0G3507 等场景，帮助 Claude Code、OpenCode、OpenClaw、Continue、Cursor、Codex 等 CLI / 编辑器 Agent 更安全地理解、修改、编译、烧录和调试 MSPM0 工程。
+[![GitHub Stars](https://img.shields.io/github/stars/mc3545dada/mspm0-skill?style=for-the-badge&logo=github&color=F4B400)](https://github.com/mc3545dada/mspm0-skill/stargazers)
+[![Latest Release](https://img.shields.io/github/v/release/mc3545dada/mspm0-skill?style=for-the-badge&color=2EA44F)](https://github.com/mc3545dada/mspm0-skill/releases/latest)
+[![TI MSPM0](https://img.shields.io/badge/TI-MSPM0-C8102E?style=for-the-badge)](https://www.ti.com/microcontrollers-mcus-processors/arm-based-microcontrollers/arm-cortex-m0-mcus/overview.html)
+[![License](https://img.shields.io/github/license/mc3545dada/mspm0-skill?style=for-the-badge&color=1673B1)](LICENSE)
 
-Agent可以通过SysConfig初始化引脚,自动识别项目结构/工作流/调试器,适配 CCS / Keil uVision / VSCode / CLion等IDE,支持 TI Arm Clang / CMake+GCC等工具链 , DSLite/OpenOCD等方式进行烧录和自动调试。
+[快速安装](#快速安装) · [快速使用](#快速使用) · [亮点](#核心亮点) · [实战展示](#实战展示) · [内置例程](#内置例程) · [Star History](#star-history)
+
+</div>
+
+面向MSPM0 开发与电赛备赛，适用于 Claude Code、Codex、OpenCode、OpenClaw、Continue、Cursor 等 CLI / 编辑器 Agent。这是一组经过真实项目验证的规则、脚本、例程和调试 Skill。
+
+> [!IMPORTANT]
+> 已在 **立创天猛星 MSPM0G3507 + CCS Theia / CLion + J-Link / DAPLink** 环境中完成真实板级验证。Agent 能直接修改 `.syscfg`、调用现有工具链构建，并根据探针选择 DSLite、CCS-DSS 或 OpenOCD 路径。
+
+## 核心亮点
+
+| 能力 | 能解决什么问题 |
+| --- | --- |
+| **直接理解 SysConfig** | 检查和修改 `.syscfg`，保留 metadata、时钟树、PinMux、DMA 与中断配置，不直接篡改 `ti_msp_dl_config.c/.h` |
+| **识别工程与工具链** | 区分 CCS、Keil/uVision、CMake + GCC/OpenOCD，以及简单工程、分层框架和 FreeRTOS 工程 |
+| **自动构建与烧录** | 固化 SysConfig CLI、gmake、TI Arm Clang、CMake、DSLite/J-Link 和 OpenOCD 工作流 |
+| **连接真实硬件调试** | 支持 CCS-DSS 与 OpenOCD/GDB 两条调试链路，辅助断点、寄存器、符号和复位检查 |
+| **串口闭环验证/调参** | Python 串口收发、文本帧/二进制测试，可用于 PID 与控制参数调试 |
+| **例程与 SDK 检索** | 优先利用用户工程和 TI SDK 官方例程，同时提供经过验证的 GPIO、PWM、Timer、UART/DMA 样例 |
 
 ## 快速安装
-
-推荐使用：
 
 ```bash
 npx skills add mc3545dada/mspm0-skill@mspm0-ccs
 ```
 
-也可以手动复制可安装 skill 目录：
+也可以只复制本仓库的可安装目录：
 
 ```text
 skills/mspm0-ccs/
 ```
 
-常见安装位置：
+| Agent | 常见安装位置 |
+| --- | --- |
+| Claude Code | `~/.claude/skills/mspm0-ccs/` |
+| Codex 等 | `~/.agents/skills/mspm0-ccs/` |
+| OpenClaw | `~/.openclaw/skills/mspm0-ccs/` |
 
-```text
-Claude Code:  ~/.claude/skills/mspm0-ccs/
-Codex 等:     ~/.agents/skills/mspm0-ccs/
-OpenClaw:     ~/.openclaw/skills/mspm0-ccs/
-```
-
-Windows PowerShell 示例：
+<details>
+<summary><strong>Windows PowerShell 手动安装</strong></summary>
 
 ```powershell
 New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\skills" | Out-Null
 Copy-Item -Recurse -Force .\skills\mspm0-ccs "$env:USERPROFILE\.claude\skills\mspm0-ccs"
 ```
 
-## 运行环境
+</details>
+
+### 运行环境
 
 - 辅助脚本需要 Python 3.10 或更高版本。
-- 串口工具 `serial_console.py` 额外需要 `pyserial`：`python -m pip install pyserial`。
-- SDK、SysConfig、CCS/UniFlash、OpenOCD、GDB 等开发工具不会随 skill 自动安装；只需按实际使用的工作流准备对应工具。
+- 串口工具额外需要 `pyserial`：`python -m pip install pyserial`。
+- SDK、SysConfig、CCS/UniFlash、OpenOCD、GDB 等开发工具不会随 skill 自动安装，只需准备当前工作流实际使用的工具。
 
 ## 快速使用
 
-安装后，在 MSPM0 工程目录中可以这样要求 Agent：
+安装skill后，确认你已经配置好了IDE/工具链/烧录器(也可让Agent检查)
+
+连接烧录器后，可以直接尝试
+
+在 MSPM0 工程目录中直接告诉 Agent：
 
 ```text
-请使用 mspm0-ccs skill，先检查当前工程的 .syscfg ，
-然后帮我给立创天猛星 PB22 板载 LED 配置 1 秒闪烁，并编译烧录。
+请使用 mspm0-ccs skill，检查当前工程的 .syscfg 和工具链，
+为立创天猛星 PB22 板载 LED 配置 1 秒闪烁，完成构建并烧录。
 ```
+
+也可以针对现有工程继续开发：
 
 ```text
-请使用 mspm0-ccs skill，参考 UART DMA 收发例程，
-帮我配置 UART0 发送和换行帧接收，并用 Python 串口工具验证回显。
+请使用 mspm0-ccs skill，(读取AGENTS.md) 保留现有工程结构和无关配置，
+为我选择一个可用的串口并告诉我连接方式，之后用 Python 串口工具验证回显。
 ```
 
-```text
-请使用 mspm0-ccs skill，检查这个 MSPM0 工程属于 CCS、Keil 还是 CMake/OpenOCD 工作流，
-检查我当前连接的调试器，不要修改生成文件，先给我说明构建和烧录路径。
-```
+对于新项目，建议使用Plan模式开始开发
 
-## 功能概览
+对于所有需要外接模块的情况，建议提供模块数据手册给Agent
 
-| 能力 | 说明 |
-| --- | --- |
-| SysConfig 辅助 | 检查并修改 `.syscfg`，避免直接改 `ti_msp_dl_config.c/.h` 这类生成文件 |
-| 编译烧录 | 固化 SysConfig CLI、gmake、DSLite/J-Link、OpenOCD 等链路的经验 |
-| 串口工具 | Python 串口收发、文本帧测试、为后续 PID/参数调试做基础 |
-| CCS-DSS 调试 | 基于 CCS Debug Server Scripting 的探针连接、断点、符号加载辅助 |
-| OpenOCD/GDB 调试 | 基于 CMSIS-DAP、OpenOCD 和 GDB 的连接、烧录、寄存器读取与符号断点辅助 |
-| 例程管理 | 自动从TI SDK中搜寻例程，同时提供已验证例程，也支持从用户项目抽取精简例程包 |
-| 模块驱动 | 提供某个模块/传感器/电机的手册后要求Agent制作驱动 |
+开发前，建议根据自己风格让其设计AGENTS.md文件(如划分BSP/APP目录等)
+
+Agent 会先识别工程结构、`.syscfg`、生成符号、构建方式和探针，再选择对应流程；不会默认把示例目录结构强行搬进用户工程。
+
+## 实战展示
+
+### 2024 年电赛 H 题：全程使用本 skill 开发
+
+仓库：**[2024hVibe：完整代码与 Agent 对话记录](https://github.com/mc3545dada/2024hVibe)**
+
+从需求分析、SysConfig 外设配置、工程修改到板级调试均由本 skill 辅助完成，可作为端到端使用参考。
+
+- [2024 年电赛 H 题完整实战演示](https://www.bilibili.com/video/BV1w9Nc69EXP/)
+- [MSPM0 Skill 完整使用视频](https://www.bilibili.com/video/BV1RbLY6xECu)
+
+<table>
+  <tr>
+    <td width="50%"><img src="assets/screenshots/claude-code-summary.png" alt="Claude Code 完成 SysConfig、编译和烧录后的总结"></td>
+    <td width="50%"><img src="assets/screenshots/vofa-output.png" alt="Codex 配置外设并通过 VOFA+ 查看串口输出"></td>
+  </tr>
+  <tr>
+    <td align="center">SysConfig、编译与烧录结果</td>
+    <td align="center">串口收发与 VOFA+ 验证</td>
+  </tr>
+</table>
+
+更多过程截图见 [`assets/screenshots/`](assets/screenshots/)。
 
 ## 已验证环境
 
-主要验证组合：
+| 类别 | 已验证组合 |
+| --- | --- |
+| 开发板 | 立创天猛星 MSPM0G3507 |
+| IDE / 环境 | CCS Theia、Keil、VS Code、CLion |
+| SDK / SysConfig | MSPM0 SDK 2.10.00.04、SysConfig 1.26.2 |
+| 编译器 | TI Arm Clang 4.x LTS、Arm GNU Toolchain / CMake |
+| 探针 | J-Link、XDS110、DAPLink / CMSIS-DAP |
+| 烧录与调试 | UniFlash / DSLite、CCS-DSS、OpenOCD / GDB |
+| 外设 | GPIO、PWM、Timer、UART + DMA、I2C、SPI、ADC等 |
 
-- 开发板：立创天猛星 MSPM0G3507
-- 开发环境：CCS Theia / VS Code / CLion
-- SDK：MSPM0 SDK 2.10.00.04
-- SysConfig：1.26.2
-- 编译器：TI Arm Clang 4.x LTS / CMake + GCC
-- 烧录器：J-Link / DAPLink
-- 烧录工具：UniFlash / DSLite / OpenOCD
-- 已验证外设：GPIO、UART+DMA 、TIM 、IIC 等
+其他开发板、芯片封装、SDK/CCS/Keil/CMake 版本和调试器可能同样可用，但尚未全部实机验证。迁移到新组合时，建议先完成最小点灯、串口或定时器测试。
 
-其他开发板、芯片封装、SDK/CCS/Keil/CMake 版本、调试器或烧录方式可能也能使用，但没有完全保证。迁移到其他组合时，建议先做最小点灯、串口或定时器验证。
+## 内置例程
 
-## 使用示例
+| 例程 | 主频 | 主要内容 |
+| --- | --- | --- |
+| `empty_project` | 32 MHz | 空工程基线 |
+| `led_blink` | 32 MHz | PB22 板载 LED 闪烁 |
+| `pwm_breath_led` | 80 MHz | PB22 / TIMG PWM 呼吸灯 |
+| `timer_irq_led` | 80 MHz | TIMG12 1 ms 中断，ISR 每 500 ms 翻转 PB22 |
+| `uart_blocking_tx` | 80 MHz | UART0 阻塞发送字符串 |
+| `uart_dma_tx_irq_rx` | 80 MHz | 双 UART、DMA 发送、中断/轮询接收与文本帧解析 |
 
-### 完整实战：2024 年电赛 H 题
+例程是经过验证的参考，不是必须照搬的模板。Agent 应以用户现有工程结构为准，只提取需要的 `.syscfg` 字段、代码模式或调试经验。
 
-**[2024hVibe - 全程使用本 skill 完成 2024 年电赛 H 题](https://github.com/mc3545dada/2024hVibe)**
+<details>
+<summary><strong>常用脚本与命令</strong></summary>
 
-该仓库包含全程仅使用本 skill 进行 Agent 辅助开发所完成的代码和 Agent 对话记录，可作为从需求分析、工程修改到调试验证的端到端参考。
-
-配套视频：[2024 年电赛 H 题完整实战演示](https://www.bilibili.com/video/BV1w9Nc69EXP/)
-
-Claude Code 完成 SysConfig、编译和烧录后的总结：
-
-![Claude Code 完成 SysConfig、编译和烧录后的总结](assets/screenshots/claude-code-summary.png)
-
-Codex 配置外设并用 VOFA+ 查看串口输出：
-
-![VOFA+ 串口输出](assets/screenshots/vofa-output.png)
-
-完整演示视频：[Bilibili 完整使用视频](https://www.bilibili.com/video/BV1RbLY6xECu)
-
-更多截图见：`assets/screenshots/`
-
-## 常用脚本示例
-
-- Agent会在需要时自动调用脚本工具
-
-- 以下命令是在我本地目录下使用的示例
-
-- 默认在本仓库根目录执行；如果你在其他目录打开终端，请把脚本路径改成绝对路径。
+以下命令默认在本仓库根目录执行；从其他目录调用时请使用脚本绝对路径。
 
 检查 MSPM0 工程：
 
 ```powershell
-python skills\mspm0-ccs\scripts\check_syscfg.py C:\Users\3545\workspace_ccstheia\26testproject1
+python skills\mspm0-ccs\scripts\check_syscfg.py C:\path\to\project
 ```
 
-烧录或调试前，只读识别当前连接的探针，并与工程配置对比：
+只读识别探针并对比工程配置：
 
 ```powershell
 python skills\mspm0-ccs\scripts\detect_probe.py
-python skills\mspm0-ccs\scripts\check_syscfg.py C:\Users\3545\workspace_ccstheia\26testproject1 --probe
+python skills\mspm0-ccs\scripts\check_syscfg.py C:\path\to\project --probe
+```
+
+探针检测为空只表示“当前方法未识别”，不能直接断言烧录器未连接。部分 DAPLink/CMSIS-DAP 或 XDS110 会表现为复合 USB 设备或虚拟串口，可继续检查：
+
+```powershell
+python skills\mspm0-ccs\scripts\serial_console.py --list
+Get-PnpDevice -PresentOnly
 ```
 
 串口收发测试：
@@ -138,54 +175,49 @@ python skills\mspm0-ccs\scripts\serial_console.py -p COM6 -b 115200 --timestamp 
 python skills\mspm0-ccs\scripts\serial_console.py -p COM6 -b 115200 --send "ping" --send-line --timestamp --duration 3
 ```
 
-列出 skill 内例程：
+查看内置例程和搜索 TI SDK：
 
 ```powershell
 python skills\mspm0-ccs\scripts\list_examples.py
-```
-
-搜索本地 TI SDK 官方例程：
-
-```powershell
 python skills\mspm0-ccs\scripts\index_syscfg_examples.py C:\ti\mspm0_sdk_2_10_00_04 --board LP_MSPM0G3507 --module UART
 ```
 
-CCS-DSS 调试链路只适用于 CCS / CCS Theia / UniFlash Debug Server Scripting，不是 OpenOCD/GDB：
+CCS-DSS 调试：
 
 ```powershell
-python skills\mspm0-ccs\scripts\ccs_dss_debug.py C:\Users\3545\workspace_ccstheia\26testproject2 probe --leave-running
-python skills\mspm0-ccs\scripts\ccs_dss_debug.py C:\Users\3545\workspace_ccstheia\26testproject2 run-to-symbol --symbol main --load --reset "System Reset"
+python skills\mspm0-ccs\scripts\ccs_dss_debug.py C:\path\to\project probe --leave-running
+python skills\mspm0-ccs\scripts\ccs_dss_debug.py C:\path\to\project run-to-symbol --symbol main --load --reset "System Reset"
 ```
 
-OpenOCD/GDB 调试链路适用于 CMSIS-DAP / DAPLink 等 OpenOCD 支持的探针，需要含 MSPM0 支持的 OpenOCD 版本：
+OpenOCD/GDB 调试，需要含 TI MSPM0 扩展的 OpenOCD：
 
 ```powershell
-python skills\mspm0-ccs\scripts\openocd_debug.py C:\Users\3545\workspace_ccstheia\26testproject3 probe
-python skills\mspm0-ccs\scripts\openocd_debug.py C:\Users\3545\workspace_ccstheia\26testproject3 flash
-python skills\mspm0-ccs\scripts\openocd_debug.py C:\Users\3545\workspace_ccstheia\26testproject3 registers
-python skills\mspm0-ccs\scripts\openocd_debug.py C:\Users\3545\workspace_ccstheia\26testproject3 run-to-symbol --symbol main
+python skills\mspm0-ccs\scripts\openocd_debug.py C:\path\to\project probe
+python skills\mspm0-ccs\scripts\openocd_debug.py C:\path\to\project flash
+python skills\mspm0-ccs\scripts\openocd_debug.py C:\path\to\project registers
+python skills\mspm0-ccs\scripts\openocd_debug.py C:\path\to\project run-to-symbol --symbol main
 ```
 
-## 内置例程
+</details>
 
-| 例程 | 频率 | 主要内容 |
-| --- | --- | --- |
-| `empty_project` | 32MHz | 空工程基线 |
-| `led_blink` | 32MHz | PB22 板载 LED 闪烁 |
-| `pwm_breath_led` | 80MHz | PB22 / TIMG PWM 呼吸灯 |
-| `timer_irq_led` | 80MHz | TIMG12 1ms 定时中断，ISR 每 500ms 翻转 PB22 |
-| `uart_blocking_tx` | 80MHz | UART0 阻塞发送字符串 |
-| `uart_dma_tx_irq_rx` | 80MHz | UART DMA 发送 + 中断/轮询接收 + 文本帧解析示例 |
-
-例程是“可参考的已验证样例”，不是必须照搬的工程模板。Agent 使用例程时应以用户当前工程结构为准，可以只复制 `.syscfg` 字段、代码片段或调试经验，不应强行把例程里的 `BSP/`、`app/` 等目录结构搬进用户工程。
-
-## 关键提醒
+## 使用前须知
 
 - 修改 `.syscfg` 后需要重新运行 SysConfig 或重新构建工程。
-- 烧录前确认 CCS 的 `targetConfigs/*.ccxml`、Keil 调试器配置或 OpenOCD `.cfg` 与实际硬件一致。
-- 要求Agent烧录或调试时建议说明自己的调试器，CCS-DSS 调试和 OpenOCD/GDB 调试是两条不同路径。
-- 同一个探针不要并行运行多个 OpenOCD 操作。使用ST-Link等烧录器时可能会锁芯片，此时建议手动解锁芯片再使用
-- 要求Agent调试串口前应关闭打开的串口助手/VOFA等软件，避免占用串口
+- 烧录前确认 CCS `targetConfigs/*.ccxml`、Keil 调试器配置或 OpenOCD `.cfg` 与真实探针一致。
+- CCS-DSS 与 OpenOCD/GDB 是两条独立调试路径，不要混用配置。
+- 同一探针不要并行运行多个 OpenOCD 操作；遇到芯片锁定或保护时停止自动操作并提示用户手动解锁。
+- 串口测试前关闭 VOFA+ 等占用同一串口的软件。
+- 不确定硬件行为时应区分“代码/构建验证通过”和“真实板级验证通过”。
+
+## Star History
+
+<a href="https://www.star-history.com/?type=date&repos=mc3545dada%2Fmspm0-skill">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=mc3545dada/mspm0-skill&type=date&theme=dark&legend=top-left&sealed_token=uluOpBRugLRQfhGNst83BE2eLKAuIoGZijIZ-LZZYVtVrqKcthcqxz6UX2pMe4kGOyHcppXc2ZAHbsQKjRaH65vPj_rsPM0m0Tv3HteKexcSuJilWijy2RQvvSBIhf3TnPahQGfFsan3zRzyikvLpVOfGUfQfHuVxPn7U00Ez8h7Uno2686SeGkkaizX">
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=mc3545dada/mspm0-skill&type=date&legend=top-left&sealed_token=uluOpBRugLRQfhGNst83BE2eLKAuIoGZijIZ-LZZYVtVrqKcthcqxz6UX2pMe4kGOyHcppXc2ZAHbsQKjRaH65vPj_rsPM0m0Tv3HteKexcSuJilWijy2RQvvSBIhf3TnPahQGfFsan3zRzyikvLpVOfGUfQfHuVxPn7U00Ez8h7Uno2686SeGkkaizX">
+    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=mc3545dada/mspm0-skill&type=date&legend=top-left&sealed_token=uluOpBRugLRQfhGNst83BE2eLKAuIoGZijIZ-LZZYVtVrqKcthcqxz6UX2pMe4kGOyHcppXc2ZAHbsQKjRaH65vPj_rsPM0m0Tv3HteKexcSuJilWijy2RQvvSBIhf3TnPahQGfFsan3zRzyikvLpVOfGUfQfHuVxPn7U00Ez8h7Uno2686SeGkkaizX">
+  </picture>
+</a>
 
 ## 参考资料
 

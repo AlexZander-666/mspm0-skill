@@ -119,7 +119,7 @@ def windows_pnp_devices() -> list[dict[str, object]]:
         raise RuntimeError("PowerShell is unavailable")
     script = r"""
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-$devices = Get-PnpDevice -PresentOnly -Class USB
+$devices = Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -match '^(USB|HID)\\' }
 $items = foreach ($device in $devices) {
     [PSCustomObject]@{
         Class = $device.Class
@@ -254,8 +254,9 @@ def detect_probes() -> list[Probe]:
 
 def print_text(probes: list[Probe]) -> None:
     if not probes:
-        print("No supported debug probe was detected.")
-        print("Check the USB connection or specify the flash backend manually.")
+        print("No supported debug probe was identified by the primary scan.")
+        print("This result is inconclusive and is not proof that no probe is connected.")
+        print("Inspect OS USB/PnP devices and serial ports, then try the selected backend's own probe command.")
         return
     if len(probes) > 1:
         print(f"Detected {len(probes)} supported debug probes. Ask the user which probe to use.")
@@ -288,7 +289,16 @@ def main() -> int:
             print(f"Probe detection failed: {exc}")
         return 2
     if args.json:
-        print(json.dumps({"probes": [asdict(probe) for probe in probes]}, ensure_ascii=False, indent=2))
+        payload: dict[str, object] = {
+            "status": "detected" if probes else "inconclusive",
+            "probes": [asdict(probe) for probe in probes],
+        }
+        if not probes:
+            payload["message"] = (
+                "No supported probe was identified. This is not proof that no probe is connected; "
+                "inspect OS USB/PnP and serial devices and try the backend's own probe command."
+            )
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         print_text(probes)
     return 0 if probes else 1

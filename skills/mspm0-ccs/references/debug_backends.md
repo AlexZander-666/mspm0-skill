@@ -11,6 +11,8 @@ python scripts\check_syscfg.py <project-dir> --probe
 
 Probe detection is read-only. Do not flash when multiple probes are connected, detection is unknown, or the physical probe conflicts with project configuration until the user confirms the intended backend.
 
+Zero detected probes is an inconclusive result. Before saying that no probe is connected, inspect OS USB/PnP and serial devices and try the intended backend's read-only probe/list operation. This matters for composite DAPLink/CMSIS-DAP and XDS110 devices whose debug interface and virtual COM port may appear under different Windows device classes.
+
 ## CCS-DSS Backend
 
 CCS Debug Server Scripting is abbreviated as `ccs-dss` in this skill. Use it for CCS / CCS Theia / UniFlash tooling. Do not apply these commands to a CMake/OpenOCD project unless that project also has a valid CCS `.ccxml` and the user explicitly wants CCS DSS.

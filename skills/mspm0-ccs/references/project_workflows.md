@@ -93,6 +93,15 @@ python scripts\check_syscfg.py <project-dir> --probe
 
 The probe detector is read-only. It should not open the target, erase flash, or reset the MCU. If the physical probe conflicts with CCS `.ccxml` or OpenOCD hints, stop and ask the user to confirm the intended backend before flashing.
 
+An empty detector result means "not identified", not "no probe is connected". Composite DAPLink/CMSIS-DAP and XDS110 devices may be exposed as `USBDevice`, `HIDClass`, or `Ports` children and may also create a virtual COM port. On Windows, inspect both PnP and serial views before asking the user or selecting a backend:
+
+```powershell
+Get-PnpDevice -PresentOnly | Where-Object { ($_.FriendlyName + ' ' + $_.InstanceId) -match '(?i)DAP|CMSIS|XDS|J-Link|ST-Link' }
+python scripts\serial_console.py --list
+```
+
+If OS evidence is still ambiguous, use the intended backend's read-only list/probe command. Do not turn a detector miss into a claim that the user disconnected the hardware.
+
 Run SysConfig CLI when available. Prefer the exact command generated in `Debug/subdir_rules.mk` when it exists for CCS projects. A fresh project may not have generated makefiles yet; SysConfig CLI can still validate `.syscfg` into a temporary output directory.
 
 Build through the active project's generated build flow when present:
