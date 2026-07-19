@@ -1,4 +1,5 @@
 import io
+import json
 import sys
 import unittest
 from contextlib import redirect_stdout
@@ -42,6 +43,68 @@ class WindowsProbeDetectionTests(unittest.TestCase):
         self.assertEqual(probes[0].usb_id, "FAED:4874")
         self.assertEqual(probes[0].serial_ports, ["COM4"])
         self.assertEqual(probes[0].recommended_config, "interface/cmsis-dap.cfg")
+
+    @patch.object(detect_probe, "windows_serial_ports")
+    @patch.object(detect_probe, "windows_pnp_devices")
+    def test_deduplicates_composite_probe_interfaces_by_container_id(
+        self, pnp_devices, serial_ports
+    ) -> None:
+        container_id = "{52718FBE-FD7A-547F-84E9-5DC59B030A2C}"
+        pnp_devices.return_value = [
+            {
+                "Class": "USBDevice",
+                "FriendlyName": "DAPLink CMSIS-DAP",
+                "Manufacturer": "Arm",
+                "InstanceId": r"USB\VID_0D28&PID_0204&MI_00\6&20AC257D&0&0000",
+                "ContainerId": container_id,
+            },
+            {
+                "Class": "Ports",
+                "FriendlyName": "mbed Serial Port (COM4)",
+                "Manufacturer": "Arm",
+                "InstanceId": r"USB\VID_0D28&PID_0204&MI_02\6&20AC257D&0&0002",
+                "ContainerId": container_id,
+            },
+        ]
+        serial_ports.return_value = [
+            {
+                "DeviceID": "COM4",
+                "Name": "mbed Serial Port (COM4)",
+                "PNPDeviceID": r"USB\VID_0D28&PID_0204&MI_02\6&20AC257D&0&0002",
+            }
+        ]
+
+        probes = detect_probe.detect_windows()
+
+        self.assertEqual(len(probes), 1)
+        self.assertEqual(probes[0].kind, "cmsis-dap")
+        self.assertEqual(probes[0].serial_ports, ["COM4"])
+        self.assertIn("DAPLink CMSIS-DAP", probes[0].evidence)
+        self.assertIn("mbed Serial Port (COM4)", probes[0].evidence)
+
+    @patch.object(detect_probe, "windows_serial_ports", return_value=[])
+    @patch.object(detect_probe, "windows_pnp_devices")
+    def test_keeps_identical_probe_models_with_different_containers_separate(
+        self, pnp_devices, _serial_ports
+    ) -> None:
+        pnp_devices.return_value = [
+            {
+                "FriendlyName": "DAPLink CMSIS-DAP",
+                "Manufacturer": "Arm",
+                "InstanceId": r"USB\VID_0D28&PID_0204&MI_00\6&AAAA&0&0000",
+                "ContainerId": "{11111111-1111-1111-1111-111111111111}",
+            },
+            {
+                "FriendlyName": "DAPLink CMSIS-DAP",
+                "Manufacturer": "Arm",
+                "InstanceId": r"USB\VID_0D28&PID_0204&MI_00\6&BBBB&0&0000",
+                "ContainerId": "{22222222-2222-2222-2222-222222222222}",
+            },
+        ]
+
+        probes = detect_probe.detect_windows()
+
+        self.assertEqual(len(probes), 2)
 
     @patch.object(detect_probe, "windows_serial_ports")
     @patch.object(detect_probe, "windows_pnp_devices")
@@ -95,6 +158,18 @@ class WindowsProbeDetectionTests(unittest.TestCase):
         self.assertIn("inconclusive", text)
         self.assertIn("not proof", text)
         self.assertIn("serial ports", text)
+
+    @patch.object(detect_probe, "detect_probes", side_effect=RuntimeError("PnP failed"))
+    def test_json_error_keeps_stable_top_level_schema(self, _detect_probes) -> None:
+        output = io.StringIO()
+        with patch.object(sys, "argv", ["detect_probe.py", "--json"]), redirect_stdout(output):
+            exit_code = detect_probe.main()
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(payload["status"], "error")
+        self.assertEqual(payload["probes"], [])
+        self.assertEqual(payload["error"], "PnP failed")
 
 
 if __name__ == "__main__":

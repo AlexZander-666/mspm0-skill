@@ -113,19 +113,63 @@ def as_list(value: object) -> list[dict[str, object]]:
     return []
 
 
+def normalize_windows_container_id(value: object) -> str:
+    container_id = first_string(value).strip().strip("{}").upper()
+    if container_id in {
+        "",
+        "00000000-0000-0000-0000-000000000000",
+        "00000000-0000-0000-FFFF-FFFFFFFFFFFF",
+    }:
+        return ""
+    return container_id
+
+
+def windows_probe_key(instance_id: str, usb_id: str, container_id: object) -> str:
+    normalized_container = normalize_windows_container_id(container_id)
+    if normalized_container:
+        return f"container:{normalized_container}"
+
+    normalized_instance = instance_id.upper()
+    segments = normalized_instance.split("\\")
+    if usb_id and len(segments) >= 3 and re.search(r"&MI_[0-9A-F]{2}", segments[1]):
+        physical_path = re.sub(r"&[0-9A-F]{4}$", "", segments[-1])
+        if physical_path:
+            return f"usb-path:{usb_id}:{physical_path}"
+    return f"instance:{normalized_instance}"
+
+
+def merge_probe(existing: Probe, candidate: Probe) -> None:
+    existing.serial_ports = sorted(set(existing.serial_ports) | set(candidate.serial_ports))
+    existing.evidence.extend(item for item in candidate.evidence if item not in existing.evidence)
+    if not existing.manufacturer:
+        existing.manufacturer = candidate.manufacturer
+    if existing.display_name == existing.kind and candidate.display_name != candidate.kind:
+        existing.display_name = candidate.display_name
+
+
 def windows_pnp_devices() -> list[dict[str, object]]:
     powershell = shutil.which("powershell") or shutil.which("pwsh")
     if not powershell:
         raise RuntimeError("PowerShell is unavailable")
     script = r"""
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-$devices = Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -match '^(USB|HID)\\' }
+$devices = @(Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -match '^(USB|HID)\\' })
+$containerIds = @{}
+if ($devices.Count -gt 0) {
+    Get-PnpDeviceProperty -InputObject $devices -KeyName 'DEVPKEY_Device_ContainerId' -ThrottleLimit 32 -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            if ($null -ne $_.Data) {
+                $containerIds[$_.InstanceId] = [string]$_.Data
+            }
+        }
+}
 $items = foreach ($device in $devices) {
     [PSCustomObject]@{
         Class = $device.Class
         FriendlyName = $device.FriendlyName
         Manufacturer = $device.Manufacturer
         InstanceId = $device.InstanceId
+        ContainerId = $containerIds[$device.InstanceId]
     }
 }
 @($items) | ConvertTo-Json -Depth 3 -Compress
@@ -163,7 +207,7 @@ def windows_serial_ports() -> list[dict[str, str]]:
 def detect_windows() -> list[Probe]:
     devices = windows_pnp_devices()
     serial_ports = windows_serial_ports()
-    probes: list[Probe] = []
+    probes_by_device: dict[str, Probe] = {}
     for device in devices:
         instance_id = first_string(device.get("InstanceId"))
         usb_id = normalize_usb_id(instance_id, [])
@@ -191,20 +235,24 @@ def detect_windows() -> list[Probe]:
                     and port.get("DeviceID")
                 }
             )
-        probes.append(
-            Probe(
-                kind=kind,
-                display_name=mapped_name or (texts[0] if texts else kind),
-                manufacturer=first_string(device.get("Manufacturer")).strip(),
-                usb_id=usb_id,
-                serial_ports=ports,
-                confidence=confidence,
-                recommended_backend=backend,
-                recommended_config=config,
-                evidence=texts,
-            )
+        candidate = Probe(
+            kind=kind,
+            display_name=mapped_name or (texts[0] if texts else kind),
+            manufacturer=first_string(device.get("Manufacturer")).strip(),
+            usb_id=usb_id,
+            serial_ports=ports,
+            confidence=confidence,
+            recommended_backend=backend,
+            recommended_config=config,
+            evidence=texts,
         )
-    return probes
+        key = windows_probe_key(instance_id, usb_id, device.get("ContainerId"))
+        existing = probes_by_device.get(key)
+        if existing is None:
+            probes_by_device[key] = candidate
+        else:
+            merge_probe(existing, candidate)
+    return list(probes_by_device.values())
 
 
 def detect_linux() -> list[Probe]:
@@ -284,7 +332,13 @@ def main() -> int:
         probes = detect_probes()
     except (RuntimeError, json.JSONDecodeError) as exc:
         if args.json:
-            print(json.dumps({"probes": [], "error": str(exc)}, ensure_ascii=False, indent=2))
+            print(
+                json.dumps(
+                    {"status": "error", "probes": [], "error": str(exc)},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
         else:
             print(f"Probe detection failed: {exc}")
         return 2
