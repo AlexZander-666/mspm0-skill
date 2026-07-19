@@ -9,7 +9,7 @@
 [![TI MSPM0](https://img.shields.io/badge/TI-MSPM0-C8102E?style=for-the-badge)](https://www.ti.com/microcontrollers-mcus-processors/arm-based-microcontrollers/arm-cortex-m0-mcus/overview.html)
 [![License](https://img.shields.io/github/license/mc3545dada/mspm0-skill?style=for-the-badge&color=1673B1)](LICENSE)
 
-[快速安装](#快速安装) · [快速使用](#快速使用) · [亮点](#核心亮点) · [实战展示](#实战展示) · [内置例程](#内置例程) · [Star History](#star-history)
+[快速安装](#快速安装) · [快速使用](#快速使用) · [亮点](#核心亮点) · [实战展示](#实战展示) · [内置例程](#内置例程)
 
 </div>
 
@@ -208,16 +208,6 @@ python skills\mspm0-ccs\scripts\openocd_debug.py C:\path\to\project run-to-symbo
 - 同一探针不要并行运行多个 OpenOCD 操作；遇到芯片锁定或保护时停止自动操作并提示用户手动解锁。
 - 串口测试前关闭 VOFA+ 等占用同一串口的软件。
 - 不确定硬件行为时应区分“代码/构建验证通过”和“真实板级验证通过”。
-
-## Star History
-
-<a href="https://www.star-history.com/?type=date&repos=mc3545dada%2Fmspm0-skill">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=mc3545dada/mspm0-skill&type=date&theme=dark&legend=top-left&sealed_token=uluOpBRugLRQfhGNst83BE2eLKAuIoGZijIZ-LZZYVtVrqKcthcqxz6UX2pMe4kGOyHcppXc2ZAHbsQKjRaH65vPj_rsPM0m0Tv3HteKexcSuJilWijy2RQvvSBIhf3TnPahQGfFsan3zRzyikvLpVOfGUfQfHuVxPn7U00Ez8h7Uno2686SeGkkaizX">
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=mc3545dada/mspm0-skill&type=date&legend=top-left&sealed_token=uluOpBRugLRQfhGNst83BE2eLKAuIoGZijIZ-LZZYVtVrqKcthcqxz6UX2pMe4kGOyHcppXc2ZAHbsQKjRaH65vPj_rsPM0m0Tv3HteKexcSuJilWijy2RQvvSBIhf3TnPahQGfFsan3zRzyikvLpVOfGUfQfHuVxPn7U00Ez8h7Uno2686SeGkkaizX">
-    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=mc3545dada/mspm0-skill&type=date&legend=top-left&sealed_token=uluOpBRugLRQfhGNst83BE2eLKAuIoGZijIZ-LZZYVtVrqKcthcqxz6UX2pMe4kGOyHcppXc2ZAHbsQKjRaH65vPj_rsPM0m0Tv3HteKexcSuJilWijy2RQvvSBIhf3TnPahQGfFsan3zRzyikvLpVOfGUfQfHuVxPn7U00Ez8h7Uno2686SeGkkaizX">
-  </picture>
-</a>
 
 ## 参考资料
 
