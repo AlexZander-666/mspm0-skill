@@ -596,7 +596,12 @@ def add_probe_check(root: Path, messages: list[Message], details: dict[str, obje
     serialized = [asdict(probe) for probe in probes]
     details["connected_probes"] = {"probes": serialized}
     if not probes:
-        messages.append(Message("warning", "No supported connected debug probe was detected. Confirm the physical probe before flashing."))
+        messages.append(
+            Message(
+                "warning",
+                "No supported debug probe was identified by the primary scan. This is inconclusive, not proof that no probe is connected; inspect OS USB/PnP and serial devices or use the backend's own probe command before flashing.",
+            )
+        )
         return
     if len(probes) > 1:
         kinds = ", ".join(probe.kind for probe in probes)

@@ -29,6 +29,7 @@ Use this skill for TI MSPM0 firmware projects that use SysConfig and DriverLib t
 - Preserve unrelated user code, comments, copyright headers, project layout, and existing `.syscfg` settings. If a requested feature requires a larger rewrite, explain why before making it when possible.
 - Do not change device, package, SDK, compiler, CCS version, board, or debug probe without user confirmation.
 - If the user asks only to "flash" or "debug", do not silently assume J-Link, XDS110, CMSIS-DAP/DAPLink, or ST-Link. Detect the connected probe first. If detection is unknown, multiple probes are connected, or the project configuration conflicts with the physical probe, stop and ask the user which backend to use.
+- Treat an empty probe-detector result as inconclusive, not proof that no probe is connected. Some DAPLink/CMSIS-DAP and XDS110 devices appear only as Windows `USBDevice`, `HIDClass`, or `Ports` children. Inspect OS USB/PnP devices and serial ports (`python scripts/serial_console.py --list` on Windows), then try the intended backend's read-only probe/list command or ask the user before concluding the probe is absent.
 - If SysConfig emits warnings, report them separately from build/flash success. Do not call a warning-producing generation "clean".
 - If hardware behavior is not verified on a connected board, say that validation stopped at source, SysConfig, or build level.
 
@@ -126,7 +127,7 @@ When applying an example to a user project:
 Run bundled scripts with Python 3.10 or newer. `serial_console.py` additionally requires `pyserial`; if import fails, tell the user to run `python -m pip install pyserial`. TI SDK, SysConfig, CCS/UniFlash, OpenOCD, and GDB remain external workflow dependencies and are not installed by this skill.
 
 - `python scripts/check_syscfg.py <project-dir>`: static project check for `.syscfg`, generated files, pins, init spelling, project shape, CCS/Keil/CMake/OpenOCD clues, build output, target config, and validation hints.
-- `python scripts/detect_probe.py`: read-only connected-probe detection for common CMSIS-DAP/DAPLink, J-Link, XDS110, and ST-Link hardware.
+- `python scripts/detect_probe.py`: read-only connected-probe detection for common CMSIS-DAP/DAPLink, J-Link, XDS110, and ST-Link hardware; an empty result is explicitly inconclusive and requires OS/backend fallback checks.
 - `python scripts/check_syscfg.py <project-dir> --probe`: run the static check, detect connected probes, compare them with project hints, and suppress unsafe flash suggestions when a CCS `.ccxml` conflicts with the physical probe.
 - `python scripts/list_examples.py`: list packaged examples from `examples/*/manifest.json`.
 - `python scripts/capture_example.py <project-dir> --name <example-name> --include <glob>`: package selected source files and `.syscfg` from a user project into `examples/<example-name>/`.
@@ -150,7 +151,7 @@ python scripts/detect_probe.py
 python scripts/check_syscfg.py <project-dir> --probe
 ```
 
-Probe detection is read-only. Do not flash when multiple probes are connected, detection is unknown, or the physical probe conflicts with the project configuration until the user confirms the intended backend.
+Probe detection is read-only. Do not flash when multiple probes are connected, detection is unknown, or the physical probe conflicts with the project configuration until the user confirms the intended backend. On Windows, if no probe is identified, inspect `Get-PnpDevice -PresentOnly` and `python scripts/serial_console.py --list`; a debug probe may expose a CMSIS-DAP/XDS interface or virtual COM port outside the generic USB device class.
 
 The verified CCS flash path is DSLite / UniFlash with J-Link. For automated flashing after clock-tree changes, prefer DSLite System Reset:
 
