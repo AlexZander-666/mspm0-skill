@@ -24,6 +24,7 @@ jobs:
         run: >-
           python -m py_compile
           skills/mspm0-ccs/scripts/check_syscfg.py
+          skills/mspm0-ccs/scripts/run_sysconfig.py
           skills/mspm0-ccs/scripts/detect_probe.py
           skills/mspm0-ccs/scripts/serial_console.py
           skills/mspm0-ccs/scripts/index_syscfg_examples.py

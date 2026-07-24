@@ -121,7 +121,7 @@ Agent 会先识别工程结构、`.syscfg`、生成符号、构建方式和探�
 | --- | --- |
 | 开发板 | 立创天猛星 MSPM0G3507 |
 | IDE / 环境 | CCS Theia、Keil、VS Code、CLion |
-| SDK / SysConfig | MSPM0 SDK 2.10.00.04、SysConfig 1.26.2 |
+| SDK / SysConfig | MSPM0 SDK 2.10.00.04 / 2.11.00.07、SysConfig 1.26.2 / 1.28.0 CLI |
 | 编译器 | TI Arm Clang 4.x LTS、Arm GNU Toolchain / CMake |
 | 探针 | J-Link、XDS110、DAPLink / CMSIS-DAP |
 | 烧录与调试 | UniFlash / DSLite、CCS-DSS、OpenOCD / GDB |
@@ -151,6 +151,12 @@ Agent 会先识别工程结构、`.syscfg`、生成符号、构建方式和探�
 
 ```powershell
 python skills\mspm0-ccs\scripts\check_syscfg.py C:\path\to\project
+```
+
+使用工程声明的 SysConfig/SDK 版本，在临时目录中安全验证生成结果：
+
+```powershell
+python skills\mspm0-ccs\scripts\run_sysconfig.py C:\path\to\project
 ```
 
 只读识别探针并对比工程配置：

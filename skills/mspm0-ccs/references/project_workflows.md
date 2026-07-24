@@ -102,7 +102,43 @@ python scripts\serial_console.py --list
 
 If OS evidence is still ambiguous, use the intended backend's read-only list/probe command. Do not turn a detector miss into a claim that the user disconnected the hardware.
 
-Run SysConfig CLI when available. Prefer the exact command generated in `Debug/subdir_rules.mk` when it exists for CCS projects. A fresh project may not have generated makefiles yet; SysConfig CLI can still validate `.syscfg` into a temporary output directory.
+For SysConfig changes, use this priority:
+
+1. The bundled standalone CLI wrapper for deterministic generation validation.
+2. CCS SysConfig MCP only when the user explicitly requests it or the current agent session already exposes a confirmed SysConfig MCP tool.
+3. Static inspection only when neither backend is available; report that validation stopped before generation.
+
+Do not probe for, launch, or require CCS SysConfig MCP during the default workflow. MCP support has not yet been validated by this project. The MCP can provide immediate mutation diagnostics, while the standalone CLI wrapper validates a completed `.syscfg` edit but does not reproduce the MCP's interactive editing feedback.
+
+Run safe standalone validation with:
+
+```powershell
+python scripts\run_sysconfig.py <project-dir>
+```
+
+The wrapper reads `.syscfg` metadata, CCS `.cproject` product declarations, and existing `Debug/Release/subdir_rules.mk` evidence. It discovers installed SysConfig CLIs and MSPM0 SDK `product.json` files, selects an exact declared version, and generates only into a newly created temporary directory.
+
+Useful options:
+
+```powershell
+python scripts\run_sysconfig.py <project-dir> --dry-run
+python scripts\run_sysconfig.py <project-dir> --strict
+python scripts\run_sysconfig.py <project-dir> --json
+python scripts\run_sysconfig.py <project-dir> --keep-output
+python scripts\run_sysconfig.py <project-dir> --script path\to\selected.syscfg
+```
+
+If multiple `.syscfg` files, tools, or SDK products are plausible, select one explicitly instead of guessing:
+
+```powershell
+python scripts\run_sysconfig.py <project-dir> `
+  --tool C:\ti\sysconfig_1.28.0\sysconfig_cli.bat `
+  --product C:\ti\mspm0_sdk_2_11_00_07\.metadata\product.json
+```
+
+An explicit tool or product may differ from the project declaration. The wrapper permits that intentional override but reports the mismatch. Without an explicit override, a project that declares SysConfig 1.26.2 must not silently switch to an installed 1.28.0.
+
+`--keep-output` keeps only the wrapper-created temporary directory for inspection. It still does not write into the project. Regenerate the real project outputs through the active build system after validation.
 
 Build through the active project's generated build flow when present:
 
