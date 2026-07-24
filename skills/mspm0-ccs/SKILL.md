@@ -15,7 +15,7 @@ Use this skill for TI MSPM0 firmware projects that use SysConfig and DriverLib t
 4. Inspect generated `ti_msp_dl_config.h` for macro names, IRQ names, instance names, and the exact SysConfig init function spelling.
 5. Before adding unfamiliar SysConfig fields, inspect the user's existing `.syscfg`, `examples/*/manifest.json`, TI SDK examples, or `source/ti/driverlib/.meta/*.syscfg.js`.
 6. Modify the smallest relevant `.syscfg` and application-code surface.
-7. When CCS SysConfig MCP is available in an active CCS AI workspace, prefer it for `.syscfg` changes and immediate diagnostics. Otherwise make the smallest evidence-based edit and run `python scripts/run_sysconfig.py <project-dir>` before rebuilding.
+7. By default, make the smallest evidence-based `.syscfg` edit and run `python scripts/run_sysconfig.py <project-dir>` before rebuilding. Use CCS SysConfig MCP only when the user explicitly requests it or the current session already exposes a confirmed SysConfig MCP tool.
 8. If flashing or debugging, run `python scripts/detect_probe.py` or `python scripts/check_syscfg.py <project-dir> --probe` before selecting a backend. Confirm the configured probe matches the connected hardware and prefer a System Reset after programming.
 
 ## Core Rules
@@ -26,7 +26,7 @@ Use this skill for TI MSPM0 firmware projects that use SysConfig and DriverLib t
 - Preserve `.syscfg` metadata such as `@cliArgs`, `@v2CliArgs`, `@versions`, `--device`, `--package`, and `--product`.
 - Do not guess generated names. Read `ti_msp_dl_config.h` and use the local macros and the local init function spelling, such as `SYSCFG_DL_init()`.
 - Do not invent SysConfig fields, enum values, device metadata, board names, package names, or tool versions. Validate against local examples, SDK metadata, or SysConfig CLI.
-- New SysConfig releases may explicitly tell AI agents to use the CCS SysConfig MCP instead of editing manually. Use that MCP when it is actually available; otherwise state that the fallback is a minimal manual edit followed by standalone CLI validation, which does not provide the MCP's interactive mutation feedback.
+- New SysConfig releases may explicitly recommend the CCS SysConfig MCP. This skill does not probe for or require that unverified backend by default: use it only when the user asks for MCP or the current session already exposes a confirmed SysConfig MCP tool. Otherwise use a minimal manual edit followed immediately by standalone CLI validation, and state that this does not provide the MCP's interactive mutation feedback.
 - Preserve unrelated user code, comments, copyright headers, project layout, and existing `.syscfg` settings. If a requested feature requires a larger rewrite, explain why before making it when possible.
 - Do not change device, package, SDK, compiler, CCS version, board, or debug probe without user confirmation.
 - If the user asks only to "flash" or "debug", do not silently assume J-Link, XDS110, CMSIS-DAP/DAPLink, or ST-Link. Detect the connected probe first. If detection is unknown, multiple probes are connected, or the project configuration conflicts with the physical probe, stop and ask the user which backend to use.

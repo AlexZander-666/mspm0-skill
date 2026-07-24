@@ -104,11 +104,11 @@ If OS evidence is still ambiguous, use the intended backend's read-only list/pro
 
 For SysConfig changes, use this priority:
 
-1. CCS SysConfig MCP when it is installed, CCS is running, and the AI-enabled workspace is active.
-2. The bundled standalone CLI wrapper for deterministic generation validation.
+1. The bundled standalone CLI wrapper for deterministic generation validation.
+2. CCS SysConfig MCP only when the user explicitly requests it or the current agent session already exposes a confirmed SysConfig MCP tool.
 3. Static inspection only when neither backend is available; report that validation stopped before generation.
 
-The MCP can provide immediate mutation diagnostics. The standalone CLI wrapper validates a completed `.syscfg` edit but does not reproduce the MCP's interactive editing feedback.
+Do not probe for, launch, or require CCS SysConfig MCP during the default workflow. MCP support has not yet been validated by this project. The MCP can provide immediate mutation diagnostics, while the standalone CLI wrapper validates a completed `.syscfg` edit but does not reproduce the MCP's interactive editing feedback.
 
 Run safe standalone validation with:
 
