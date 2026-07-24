@@ -188,6 +188,22 @@ class SelectionSafetyTests(unittest.TestCase):
             with self.assertRaisesRegex(run_sysconfig.ResolutionError, "stay inside"):
                 run_sysconfig.find_syscfg(project.resolve(), str(outside))
 
+    def test_automatic_syscfg_discovery_rejects_symlink_outside_project(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            project = root / "project"
+            project.mkdir()
+            outside = root / "outside.syscfg"
+            outside.write_text("// outside", encoding="utf-8")
+            link = project / "linked.syscfg"
+            try:
+                link.symlink_to(outside)
+            except OSError as exc:
+                self.skipTest(f"symbolic links are unavailable: {exc}")
+
+            with self.assertRaisesRegex(run_sysconfig.ResolutionError, "outside the project"):
+                run_sysconfig.find_syscfg(project.resolve(), None)
+
     def test_project_version_selects_matching_tool_not_newest(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             project = write_project(Path(temp_dir))

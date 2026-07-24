@@ -105,11 +105,20 @@ def find_syscfg(project: Path, explicit: str | None) -> Path:
             raise ResolutionError(f"SysConfig script not found: {candidate}")
         return candidate
 
-    candidates = sorted(
-        path.resolve()
+    discovered = sorted(
+        path
         for path in iter_project_files(project)
         if path.suffix.lower() == ".syscfg" and not is_build_path(path, project)
     )
+    candidates: list[Path] = []
+    for candidate in discovered:
+        resolved = candidate.resolve()
+        if not is_relative_to(resolved, project):
+            relative = candidate.relative_to(project)
+            raise ResolutionError(
+                f"discovered SysConfig script resolves outside the project: {relative}"
+            )
+        candidates.append(resolved)
     if not candidates:
         raise ResolutionError(f"no .syscfg file found under {project}")
     if len(candidates) > 1:
