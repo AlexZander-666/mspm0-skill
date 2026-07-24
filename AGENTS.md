@@ -28,7 +28,7 @@ This file is the canonical source for repository-development agent rules. Claude
 After changing scripts, run:
 
 ```text
-python -m py_compile skills/mspm0-ccs/scripts/check_syscfg.py skills/mspm0-ccs/scripts/detect_probe.py skills/mspm0-ccs/scripts/serial_console.py skills/mspm0-ccs/scripts/index_syscfg_examples.py skills/mspm0-ccs/scripts/list_examples.py skills/mspm0-ccs/scripts/capture_example.py skills/mspm0-ccs/scripts/ccs_dss_debug.py skills/mspm0-ccs/scripts/openocd_debug.py
+python -m py_compile skills/mspm0-ccs/scripts/check_syscfg.py skills/mspm0-ccs/scripts/run_sysconfig.py skills/mspm0-ccs/scripts/detect_probe.py skills/mspm0-ccs/scripts/serial_console.py skills/mspm0-ccs/scripts/index_syscfg_examples.py skills/mspm0-ccs/scripts/list_examples.py skills/mspm0-ccs/scripts/capture_example.py skills/mspm0-ccs/scripts/ccs_dss_debug.py skills/mspm0-ccs/scripts/openocd_debug.py
 python -m unittest discover -s tests -v
 ```
 

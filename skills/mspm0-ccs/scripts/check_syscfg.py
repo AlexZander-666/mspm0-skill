@@ -17,6 +17,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from detect_probe import detect_probes
+from run_sysconfig import inspect_ccs_project
 
 
 GENERATED_NAMES = {"ti_msp_dl_config.c", "ti_msp_dl_config.h"}
@@ -257,6 +258,14 @@ def parse_source_init_calls(sources: Iterable[Path]) -> dict[str, list[str]]:
 
 def find_validation_hints(root: Path) -> dict[str, str]:
     hints: dict[str, str] = {}
+    sysconfig_script = Path(__file__).resolve().with_name("run_sysconfig.py")
+    syscfg_files = find_syscfg_files(root)
+    if len(syscfg_files) == 1:
+        hints["sysconfig_validate"] = f'python "{sysconfig_script}" "{root}"'
+    elif len(syscfg_files) > 1:
+        hints["sysconfig_selection"] = (
+            "Multiple .syscfg files found. Run run_sysconfig.py with --script <project-relative.syscfg>."
+        )
     makefile = root / "Debug" / "subdir_rules.mk"
     if makefile.exists():
         text = read_text(makefile)
@@ -435,6 +444,17 @@ def check_project(root: Path) -> tuple[list[Message], dict[str, object]]:
         key: (str(value) if isinstance(value, Path) else value)
         for key, value in cmake_info.items()
     }
+    try:
+        ccs_project = inspect_ccs_project(root)
+    except RuntimeError as exc:
+        ccs_project = {"products": {}, "compiler": "", "error": str(exc)}
+        messages.append(Message("warning", f"无法解析 CCS .cproject 产品声明：{exc}"))
+    details["ccs_project"] = ccs_project
+    ccs_products = ccs_project.get("products", {})
+    if isinstance(ccs_products, dict) and ccs_products:
+        product_text = ", ".join(f"{name}:{version}" for name, version in sorted(ccs_products.items()))
+        compiler = str(ccs_project.get("compiler", "")) or "未识别"
+        messages.append(Message("info", f"CCS 工程声明产品：{product_text}；SysConfig compiler={compiler}。"))
 
     if framework_info["style"] == "framework_multi_module":
         dirs = ", ".join(framework_info["framework_dirs"][:8]) or ", ".join(framework_info["top_source_dirs"][:8])
@@ -670,6 +690,8 @@ def print_text(root: Path, messages: list[Message], details: dict[str, object]) 
         print("Suggested CLI validation chain:")
         for key in (
             "detect_probe",
+            "sysconfig_validate",
+            "sysconfig_selection",
             "sysconfig_cli",
             "gmake",
             "cmake_configure",
