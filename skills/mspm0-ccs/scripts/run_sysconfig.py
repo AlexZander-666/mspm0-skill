@@ -258,7 +258,10 @@ def find_build_evidence(project: Path, script: Path) -> list[BuildEvidence]:
             if not parsed:
                 continue
             if parsed.script:
-                rule_script = Path(parsed.script).resolve()
+                rule_script = Path(parsed.script)
+                if not rule_script.is_absolute():
+                    rule_script = rule_path.parent / rule_script
+                rule_script = rule_script.resolve()
                 if rule_script != script:
                     continue
             key = (

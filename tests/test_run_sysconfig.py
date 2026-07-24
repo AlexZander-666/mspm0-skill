@@ -232,6 +232,25 @@ class SelectionSafetyTests(unittest.TestCase):
                 with self.assertRaisesRegex(run_sysconfig.ResolutionError, "conflicting"):
                     run_sysconfig.select_tool(info, None)
 
+    def test_relative_build_rule_script_is_resolved_from_build_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project = write_project(Path(temp_dir))
+            debug = project / "Debug"
+            debug.mkdir()
+            rules = debug / "subdir_rules.mk"
+            rules.write_text(
+                '"C:/ti/sysconfig_1.26.2/sysconfig_cli.bat" '
+                '--script "../empty.syscfg" -o "." '
+                '-s "C:/ti/mspm0_sdk_2_11_00_07/.metadata/product.json" '
+                "--compiler ticlang\n",
+                encoding="utf-8",
+            )
+            script = (project / "empty.syscfg").resolve()
+            evidence = run_sysconfig.find_build_evidence(project, script)
+        self.assertEqual(len(evidence), 1)
+        self.assertEqual(evidence[0].script, "../empty.syscfg")
+        self.assertEqual(evidence[0].compiler, "ticlang")
+
     def test_product_version_matches_with_different_zero_padding(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
