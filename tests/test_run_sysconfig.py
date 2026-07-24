@@ -70,11 +70,16 @@ def write_fake_cli(
     version: str = "1.26.2+test",
     warning: bool = False,
     fail: bool = False,
+    honor_strict: bool = True,
 ) -> Path:
     if os.name == "nt":
         path = root / "fake_sysconfig_cli.bat"
         warning_line = "echo WARNING: fake warning 1>&2" if warning else ""
-        strict_line = 'if "%strict%"=="1" exit /b 1' if warning else ""
+        strict_line = (
+            'if "%strict%"=="1" exit /b 1'
+            if warning and honor_strict
+            else ""
+        )
         fail_line = "exit /b 1" if fail else "exit /b 0"
         path.write_text(
             "\n".join(
@@ -102,7 +107,11 @@ def write_fake_cli(
     else:
         path = root / "fake_sysconfig_cli"
         warning_line = 'echo "WARNING: fake warning" >&2' if warning else ""
-        strict_line = '[ "$strict" -eq 1 ] && exit 1' if warning else ""
+        strict_line = (
+            '[ "$strict" -eq 1 ] && exit 1'
+            if warning and honor_strict
+            else ""
+        )
         fail_line = "exit 1" if fail else "exit 0"
         path.write_text(
             "\n".join(
@@ -389,6 +398,27 @@ class CliExecutionTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(report["status"], "error")
         self.assertIn("--treatWarningsAsErrors", report["command_text"])
+
+    def test_strict_fails_even_when_cli_ignores_warnings_as_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            project = write_project(root)
+            product = write_product(root / "sdk")
+            warning_tool = write_fake_cli(root, warning=True, honor_strict=False)
+            code, report, _stderr = self.run_main(
+                [
+                    str(project),
+                    "--tool",
+                    str(warning_tool),
+                    "--product",
+                    str(product),
+                    "--strict",
+                    "--json",
+                ]
+            )
+        self.assertEqual(report["returncode"], 0)
+        self.assertEqual(code, 1)
+        self.assertEqual(report["status"], "error")
 
 
 class CheckerIntegrationTests(unittest.TestCase):

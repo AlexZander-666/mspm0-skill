@@ -304,6 +304,7 @@ def resolve_tool_path(value: str) -> Path:
 
 
 def command_for_tool(tool: Path, args: list[str]) -> list[str]:
+    # Python launches .bat files directly on Windows; cmd /c broke quoted paths with spaces.
     return [str(tool), *args]
 
 
@@ -852,6 +853,9 @@ def main(argv: list[str] | None = None) -> int:
                     re.search(r"\bwarning\b", combined, flags=re.IGNORECASE)
                 )
                 if result.returncode != 0:
+                    report["status"] = "error"
+                    exit_code = 1
+                elif args.strict and has_warning:
                     report["status"] = "error"
                     exit_code = 1
                 elif has_warning:
