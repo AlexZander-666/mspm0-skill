@@ -494,11 +494,16 @@ def select_tool(
                 query_tool_version(path),
                 f"build rule: {evidence.source}",
             )
-            for version, source in expected:
-                if not versions_match(selected.version, version):
-                    warnings.append(
-                        f"build-rule SysConfig {selected.version} differs from {source} {version}"
-                    )
+            mismatches = [
+                f"{source} {version}"
+                for version, source in expected
+                if not versions_match(selected.version, version)
+            ]
+            if mismatches:
+                raise ResolutionError(
+                    f"build-rule SysConfig {selected.version} conflicts with "
+                    f"{', '.join(mismatches)}; use --tool for an intentional override"
+                )
             return selected, warnings, [selected]
 
     ccs_conflict = ccs_conflicting_product_versions(info, "sysconfig")
@@ -615,6 +620,35 @@ def normalize_product_name(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
+def product_install_version(candidate: ProductCandidate) -> str:
+    product_path = Path(candidate.path)
+    install_dir = (
+        product_path.parent.parent
+        if product_path.parent.name == ".metadata"
+        else product_path.parent
+    )
+    match = re.search(r"(\d+(?:[._-]\d+){2,})$", install_dir.name)
+    if not match:
+        return ""
+    return re.sub(r"[._-]", ".", match.group(1))
+
+
+def product_matches_requirement(
+    candidate: ProductCandidate,
+    name: str,
+    version: str,
+    source: str,
+) -> bool:
+    if normalize_product_name(candidate.name) != normalize_product_name(name):
+        return False
+    if versions_match(candidate.version, version):
+        return True
+    return source == ".cproject PRODUCTS" and versions_match(
+        product_install_version(candidate),
+        version,
+    )
+
+
 def is_product_path_value(value: str) -> bool:
     expanded = os.path.expandvars(os.path.expanduser(value.strip()))
     return (
@@ -669,13 +703,31 @@ def select_product(
         )
         if item[0] and item[1]
     ]
+    metadata_candidate: ProductCandidate | None = None
+    metadata_path = metadata_product_path(info)
+    if metadata_path:
+        try:
+            metadata_candidate = product_from_json(
+                metadata_path,
+                ".syscfg metadata path",
+            )
+        except ResolutionError as exc:
+            if not explicit:
+                raise
+            warnings.append(str(exc))
+        if metadata_candidate:
+            requirements.append(
+                (
+                    metadata_candidate.name,
+                    metadata_candidate.version,
+                    ".syscfg metadata path",
+                )
+            )
 
     if explicit:
         selected = product_from_json(Path(explicit), "explicit --product")
         for name, version, source in requirements:
-            if normalize_product_name(selected.name) != normalize_product_name(name) or not versions_match(
-                selected.version, version
-            ):
+            if not product_matches_requirement(selected, name, version, source):
                 warnings.append(
                     f"explicit product {selected.name}@{selected.version} differs from "
                     f"{source} {name}@{version}"
@@ -695,14 +747,16 @@ def select_product(
             Path(evidence.product),
             f"build rule: {evidence.source}",
         )
-        for name, version, source in requirements:
-            if normalize_product_name(selected.name) != normalize_product_name(name) or not versions_match(
-                selected.version, version
-            ):
-                warnings.append(
-                    f"build-rule product {selected.name}@{selected.version} differs from "
-                    f"{source} {name}@{version}"
-                )
+        mismatches = [
+            f"{source} {name}@{version}"
+            for name, version, source in requirements
+            if not product_matches_requirement(selected, name, version, source)
+        ]
+        if mismatches:
+            raise ResolutionError(
+                f"build-rule product {selected.name}@{selected.version} conflicts with "
+                f"{', '.join(mismatches)}; use --product for an intentional override"
+            )
         return selected, warnings, [selected]
 
     ccs_conflict = ccs_conflicting_product_versions(info, "mspm0sdk")
@@ -713,47 +767,59 @@ def select_product(
             f"({', '.join(versions)}); select one with --product"
         )
 
-    metadata_path = metadata_product_path(info)
-    if metadata_path:
-        selected = product_from_json(metadata_path, ".syscfg metadata path")
-        for name, version, source in requirements:
-            if normalize_product_name(selected.name) != normalize_product_name(name) or not versions_match(
-                selected.version, version
-            ):
-                warnings.append(
-                    f"metadata product {selected.name}@{selected.version} differs from "
-                    f"{source} {name}@{version}"
-                )
-        return selected, warnings, [selected]
-
-    normalized_requirements = {
-        (normalize_product_name(name), version_key(version))
-        for name, version, _source in requirements
-    }
-    if len(normalized_requirements) > 1:
-        detail = ", ".join(f"{source}={name}@{version}" for name, version, source in requirements)
-        raise ResolutionError(f"conflicting SDK product declarations ({detail}); use --product")
+    if metadata_candidate:
+        mismatches = [
+            f"{source} {name}@{version}"
+            for name, version, source in requirements
+            if not product_matches_requirement(
+                metadata_candidate,
+                name,
+                version,
+                source,
+            )
+        ]
+        if mismatches:
+            raise ResolutionError(
+                f"metadata product {metadata_candidate.name}@{metadata_candidate.version} "
+                f"conflicts with {', '.join(mismatches)}; "
+                "use --product for an intentional override"
+            )
+        return metadata_candidate, warnings, [metadata_candidate]
 
     candidates = discover_products(info.build_evidence)
     if not candidates:
         raise ResolutionError("no MSPM0 SDK product.json found; pass --product")
 
-    if normalized_requirements:
-        required_name, required_version_key = next(iter(normalized_requirements))
+    if requirements:
         required_version = requirements[0][1]
         matches = [
             item
             for item in candidates
-            if normalize_product_name(item.name) == required_name
-            and version_key(item.version) == required_version_key
+            if all(
+                product_matches_requirement(item, name, version, source)
+                for name, version, source in requirements
+            )
         ]
         if len(matches) == 1:
             return matches[0], warnings, candidates
         if len(matches) > 1:
             choices = ", ".join(item.path for item in matches)
             raise ResolutionError(
-                f"multiple {required_name}@{required_version} products found ({choices}); use --product"
+                f"multiple products satisfy project declarations ({choices}); use --product"
             )
+        normalized_requirements = {
+            (normalize_product_name(name), version_key(version))
+            for name, version, _source in requirements
+        }
+        if len(normalized_requirements) > 1:
+            detail = ", ".join(
+                f"{source}={name}@{version}"
+                for name, version, source in requirements
+            )
+            raise ResolutionError(
+                f"conflicting SDK product declarations ({detail}); use --product"
+            )
+        required_name = normalize_product_name(requirements[0][0])
         available = ", ".join(
             f"{item.name}@{item.version} ({item.path})" for item in candidates
         )

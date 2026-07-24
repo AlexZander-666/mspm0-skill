@@ -312,6 +312,89 @@ class SelectionSafetyTests(unittest.TestCase):
         self.assertEqual(evidence[0].script, "../empty.syscfg")
         self.assertEqual(evidence[0].compiler, "ticlang")
 
+    def test_mismatched_build_rule_tool_requires_explicit_override(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            project = write_project(root, tool_version="1.26.2")
+            tool = write_fake_cli(root, version="1.28.0+4712")
+            info = run_sysconfig.inspect_project(project)
+            info.build_evidence = [
+                run_sysconfig.BuildEvidence(
+                    tool=str(tool),
+                    script=str(project / "empty.syscfg"),
+                    product="",
+                    compiler="ticlang",
+                    source=str(project / "Debug" / "subdir_rules.mk"),
+                )
+            ]
+            with self.assertRaisesRegex(
+                run_sysconfig.ResolutionError,
+                r"build-rule SysConfig.*--tool",
+            ):
+                run_sysconfig.select_tool(info, None)
+
+    def test_mismatched_build_rule_product_requires_explicit_override(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            project = write_project(root, sdk_version="2.11.00.07")
+            product = write_product(root / "stale sdk", "2.10.00.04")
+            info = run_sysconfig.inspect_project(project)
+            info.build_evidence = [
+                run_sysconfig.BuildEvidence(
+                    tool="",
+                    script=str(project / "empty.syscfg"),
+                    product=str(product),
+                    compiler="ticlang",
+                    source=str(project / "Debug" / "subdir_rules.mk"),
+                )
+            ]
+            with self.assertRaisesRegex(
+                run_sysconfig.ResolutionError,
+                r"build-rule product.*--product",
+            ):
+                run_sysconfig.select_product(info, None)
+
+    def test_explicit_mismatched_product_is_allowed_with_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            project = write_project(root, sdk_version="2.11.00.07")
+            product = write_product(root / "selected sdk", "2.10.00.04")
+            info = run_sysconfig.inspect_project(project)
+            selected, warnings, _available = run_sysconfig.select_product(
+                info,
+                str(product),
+            )
+        self.assertEqual(selected.version, "2.10.00.04")
+        self.assertTrue(any("differs" in warning for warning in warnings))
+
+    def test_ccs_install_version_can_match_product_internal_patch_version(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            project = write_project(root, sdk_version="2.05.01.00")
+            syscfg = project / "empty.syscfg"
+            syscfg.write_text(
+                syscfg.read_text(encoding="utf-8")
+                + '\n//@cliArgs --product "mspm0_sdk@2.05.01.01"\n',
+                encoding="utf-8",
+            )
+            product = write_product(
+                root / "mspm0_sdk_2_05_01_00",
+                "2.05.01.01",
+            )
+            info = run_sysconfig.inspect_project(project)
+            info.build_evidence = [
+                run_sysconfig.BuildEvidence(
+                    tool="",
+                    script=str(syscfg),
+                    product=str(product),
+                    compiler="ticlang",
+                    source=str(project / "Debug" / "subdir_rules.mk"),
+                )
+            ]
+            selected, warnings, _available = run_sysconfig.select_product(info, None)
+        self.assertEqual(selected.version, "2.05.01.01")
+        self.assertEqual(warnings, [])
+
     def test_product_version_matches_with_different_zero_padding(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -342,6 +425,24 @@ class SelectionSafetyTests(unittest.TestCase):
         self.assertEqual(selected.source, ".syscfg metadata path")
         self.assertEqual(warnings, [])
         self.assertEqual(available, [selected])
+
+    def test_mismatched_metadata_product_path_requires_explicit_override(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            project = write_project(root, sdk_version="2.11.00.07")
+            product = write_product(root / "metadata sdk", "2.10.00.04")
+            syscfg = project / "empty.syscfg"
+            syscfg.write_text(
+                syscfg.read_text(encoding="utf-8")
+                + f'\n//@cliArgs --product "{product.as_posix()}"\n',
+                encoding="utf-8",
+            )
+            info = run_sysconfig.inspect_project(project)
+            with self.assertRaisesRegex(
+                run_sysconfig.ResolutionError,
+                r"metadata product.*--product",
+            ):
+                run_sysconfig.select_product(info, None)
 
     def test_conflicting_ccs_configurations_require_explicit_selection(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
