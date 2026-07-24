@@ -455,6 +455,29 @@ def check_project(root: Path) -> tuple[list[Message], dict[str, object]]:
         product_text = ", ".join(f"{name}:{version}" for name, version in sorted(ccs_products.items()))
         compiler = str(ccs_project.get("compiler", "")) or "未识别"
         messages.append(Message("info", f"CCS 工程声明产品：{product_text}；SysConfig compiler={compiler}。"))
+    ccs_product_conflicts = ccs_project.get("product_conflicts", {})
+    if isinstance(ccs_product_conflicts, dict) and ccs_product_conflicts:
+        conflict_text = ", ".join(
+            f"{name}:{'/'.join(versions)}"
+            for name, versions in sorted(ccs_product_conflicts.items())
+        )
+        messages.append(
+            Message(
+                "warning",
+                f"CCS 各构建配置的产品版本不一致：{conflict_text}；"
+                "运行 SysConfig CLI 前请显式选择工具或 SDK。",
+            )
+        )
+    ccs_compiler_conflicts = ccs_project.get("compiler_conflicts", [])
+    if isinstance(ccs_compiler_conflicts, list) and ccs_compiler_conflicts:
+        messages.append(
+            Message(
+                "warning",
+                "CCS 各构建配置的 SysConfig compiler 不一致："
+                f"{'/'.join(str(item) for item in ccs_compiler_conflicts)}；"
+                "运行 SysConfig CLI 前请使用 --compiler 显式选择。",
+            )
+        )
 
     if framework_info["style"] == "framework_multi_module":
         dirs = ", ".join(framework_info["framework_dirs"][:8]) or ", ".join(framework_info["top_source_dirs"][:8])

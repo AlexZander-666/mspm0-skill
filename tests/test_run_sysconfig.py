@@ -162,7 +162,52 @@ class MetadataTests(unittest.TestCase):
             result = run_sysconfig.inspect_ccs_project(project)
         self.assertEqual(result["products"]["MSPM0-SDK"], "2.11.0.07")
         self.assertEqual(result["products"]["sysconfig"], "1.26.2")
+        self.assertEqual(result["product_conflicts"], {})
         self.assertEqual(result["compiler"], "ticlang")
+        self.assertEqual(result["compiler_conflicts"], [])
+
+    def test_ccs_product_versions_preserve_configuration_conflicts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project = write_project(Path(temp_dir))
+            (project / ".cproject").write_text(
+                "\n".join(
+                    (
+                        "<cproject>",
+                        '  <storageModule value="PRODUCTS=MSPM0-SDK:2.10.00.04;sysconfig:1.26.2;"/>',
+                        '  <storageModule value="PRODUCTS=MSPM0-SDK:2.11.00.07;sysconfig:1.28.0;"/>',
+                        "</cproject>",
+                    )
+                ),
+                encoding="utf-8",
+            )
+            result = run_sysconfig.inspect_ccs_project(project)
+        self.assertEqual(result["products"], {})
+        self.assertEqual(
+            result["product_conflicts"]["MSPM0-SDK"],
+            ["2.10.00.04", "2.11.00.07"],
+        )
+        self.assertEqual(
+            result["product_conflicts"]["sysconfig"],
+            ["1.26.2", "1.28.0"],
+        )
+
+    def test_ccs_equivalent_zero_padded_versions_are_not_conflicts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project = write_project(Path(temp_dir))
+            (project / ".cproject").write_text(
+                "\n".join(
+                    (
+                        "<cproject>",
+                        '  <storageModule value="PRODUCTS=MSPM0-SDK:2.11.0.07;"/>',
+                        '  <storageModule value="PRODUCTS=MSPM0-SDK:2.11.00.07;"/>',
+                        "</cproject>",
+                    )
+                ),
+                encoding="utf-8",
+            )
+            result = run_sysconfig.inspect_ccs_project(project)
+        self.assertEqual(result["products"]["MSPM0-SDK"], "2.11.0.07")
+        self.assertEqual(result["product_conflicts"], {})
 
     def test_versions_ignore_leading_zero_differences(self) -> None:
         self.assertTrue(run_sysconfig.versions_match("2.11.0.07", "2.11.00.07"))
@@ -278,6 +323,45 @@ class SelectionSafetyTests(unittest.TestCase):
                 selected, warnings, _available = run_sysconfig.select_product(info, None)
         self.assertEqual(selected.version, "2.11.00.07")
         self.assertEqual(warnings, [])
+
+    def test_path_form_metadata_product_is_selected_outside_common_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            project = write_project(root)
+            product = write_product(root / "custom sdk")
+            syscfg = project / "empty.syscfg"
+            syscfg.write_text(
+                syscfg.read_text(encoding="utf-8")
+                + f'\n//@cliArgs --product "{product.as_posix()}"\n',
+                encoding="utf-8",
+            )
+            info = run_sysconfig.inspect_project(project)
+            with mock.patch.object(run_sysconfig, "discover_products", return_value=[]):
+                selected, warnings, available = run_sysconfig.select_product(info, None)
+        self.assertEqual(Path(selected.path), product.resolve())
+        self.assertEqual(selected.source, ".syscfg metadata path")
+        self.assertEqual(warnings, [])
+        self.assertEqual(available, [selected])
+
+    def test_conflicting_ccs_configurations_require_explicit_selection(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project = write_project(Path(temp_dir))
+            (project / ".cproject").write_text(
+                "\n".join(
+                    (
+                        "<cproject>",
+                        '  <storageModule value="PRODUCTS=MSPM0-SDK:2.10.00.04;sysconfig:1.26.2;"/>',
+                        '  <storageModule value="PRODUCTS=MSPM0-SDK:2.11.00.07;sysconfig:1.28.0;"/>',
+                        "</cproject>",
+                    )
+                ),
+                encoding="utf-8",
+            )
+            info = run_sysconfig.inspect_project(project)
+            with self.assertRaisesRegex(run_sysconfig.ResolutionError, "--tool"):
+                run_sysconfig.select_tool(info, None)
+            with self.assertRaisesRegex(run_sysconfig.ResolutionError, "--product"):
+                run_sysconfig.select_product(info, None)
 
 
 class CliExecutionTests(unittest.TestCase):

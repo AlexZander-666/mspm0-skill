@@ -59,7 +59,9 @@ class ProjectInfo:
     script: str
     metadata: dict[str, object]
     ccs_products: dict[str, str]
+    ccs_product_conflicts: dict[str, list[str]]
     ccs_compiler: str
+    ccs_compiler_conflicts: list[str]
     build_evidence: list[BuildEvidence]
 
 
@@ -204,15 +206,21 @@ def parse_syscfg_metadata(text: str) -> dict[str, object]:
 def inspect_ccs_project(project: Path) -> dict[str, object]:
     cproject = project / ".cproject"
     if not cproject.is_file():
-        return {"products": {}, "compiler": ""}
+        return {
+            "products": {},
+            "product_conflicts": {},
+            "compiler": "",
+            "compiler_conflicts": [],
+        }
 
     try:
         root = ET.parse(cproject).getroot()
     except ET.ParseError as exc:
         raise ResolutionError(f"cannot parse {cproject}: {exc}") from exc
 
-    products: dict[str, str] = {}
-    compiler = ""
+    product_names: dict[str, str] = {}
+    product_versions: dict[str, set[str]] = {}
+    compilers: set[str] = set()
     for element in root.iter():
         value = element.attrib.get("value", "")
         if value.startswith("PRODUCTS="):
@@ -220,7 +228,13 @@ def inspect_ccs_project(project: Path) -> dict[str, object]:
                 if ":" not in item:
                     continue
                 name, version = item.split(":", 1)
-                products[name.strip()] = version.strip()
+                name = name.strip()
+                version = version.strip()
+                if not name or not version:
+                    continue
+                key = re.sub(r"[^a-z0-9]", "", name.lower())
+                display_name = product_names.setdefault(key, name)
+                product_versions.setdefault(display_name, set()).add(version)
 
         identifier = " ".join(
             (
@@ -230,11 +244,23 @@ def inspect_ccs_project(project: Path) -> dict[str, object]:
             )
         ).lower()
         if "ticlang" in identifier:
-            compiler = "ticlang"
-        elif not compiler and ("arm-none-eabi" in identifier or "gnu" in identifier):
-            compiler = "gcc"
+            compilers.add("ticlang")
+        elif "arm-none-eabi" in identifier or "gnu" in identifier:
+            compilers.add("gcc")
 
-    return {"products": products, "compiler": compiler}
+    products: dict[str, str] = {}
+    product_conflicts: dict[str, list[str]] = {}
+    for name, versions in product_versions.items():
+        if len({version_key(version) for version in versions}) == 1:
+            products[name] = sorted(versions)[0]
+        else:
+            product_conflicts[name] = sorted(versions)
+    return {
+        "products": products,
+        "product_conflicts": product_conflicts,
+        "compiler": next(iter(compilers)) if len(compilers) == 1 else "",
+        "compiler_conflicts": sorted(compilers) if len(compilers) > 1 else [],
+    }
 
 
 def parse_build_rule(line: str, source: Path) -> BuildEvidence | None:
@@ -297,7 +323,9 @@ def inspect_project(project: Path, explicit_script: str | None = None) -> Projec
         script=str(script),
         metadata=metadata,
         ccs_products=dict(ccs["products"]),
+        ccs_product_conflicts=dict(ccs["product_conflicts"]),
         ccs_compiler=str(ccs["compiler"]),
+        ccs_compiler_conflicts=list(ccs["compiler_conflicts"]),
         build_evidence=find_build_evidence(project, script),
     )
 
@@ -423,6 +451,16 @@ def expected_tool_versions(info: ProjectInfo) -> list[tuple[str, str]]:
     return versions
 
 
+def ccs_conflicting_product_versions(
+    info: ProjectInfo,
+    normalized_name: str,
+) -> tuple[str, list[str]] | None:
+    for name, versions in info.ccs_product_conflicts.items():
+        if normalize_product_name(name) == normalized_name:
+            return name, versions
+    return None
+
+
 def select_tool(
     info: ProjectInfo,
     explicit: str | None,
@@ -462,6 +500,14 @@ def select_tool(
                         f"build-rule SysConfig {selected.version} differs from {source} {version}"
                     )
             return selected, warnings, [selected]
+
+    ccs_conflict = ccs_conflicting_product_versions(info, "sysconfig")
+    if ccs_conflict:
+        name, versions = ccs_conflict
+        raise ResolutionError(
+            f"CCS configurations declare multiple {name} versions "
+            f"({', '.join(versions)}); select one with --tool"
+        )
 
     distinct_expected = {version_key(version) for version, _source in expected}
     if len(distinct_expected) > 1:
@@ -569,15 +615,38 @@ def normalize_product_name(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
+def is_product_path_value(value: str) -> bool:
+    expanded = os.path.expandvars(os.path.expanduser(value.strip()))
+    return (
+        "/" in expanded
+        or "\\" in expanded
+        or expanded.lower().endswith("product.json")
+        or Path(expanded).is_absolute()
+    )
+
+
 def metadata_product_requirement(info: ProjectInfo) -> tuple[str, str]:
     args = info.metadata.get("effective_args", {})
     if not isinstance(args, dict):
         return "", ""
-    product = str(args.get("product", ""))
-    if "@" not in product:
+    product = str(args.get("product", "")).strip()
+    if is_product_path_value(product) or "@" not in product:
         return "", ""
     name, version = product.rsplit("@", 1)
     return name, version
+
+
+def metadata_product_path(info: ProjectInfo) -> Path | None:
+    args = info.metadata.get("effective_args", {})
+    if not isinstance(args, dict):
+        return None
+    product = str(args.get("product", "")).strip()
+    if not product or ("@" in product and not is_product_path_value(product)):
+        return None
+    path = Path(os.path.expandvars(os.path.expanduser(product)))
+    if not path.is_absolute():
+        path = Path(info.script).parent / path
+    return path.resolve()
 
 
 def ccs_product_requirement(info: ProjectInfo) -> tuple[str, str]:
@@ -636,6 +705,27 @@ def select_product(
                 )
         return selected, warnings, [selected]
 
+    ccs_conflict = ccs_conflicting_product_versions(info, "mspm0sdk")
+    if ccs_conflict:
+        name, versions = ccs_conflict
+        raise ResolutionError(
+            f"CCS configurations declare multiple {name} versions "
+            f"({', '.join(versions)}); select one with --product"
+        )
+
+    metadata_path = metadata_product_path(info)
+    if metadata_path:
+        selected = product_from_json(metadata_path, ".syscfg metadata path")
+        for name, version, source in requirements:
+            if normalize_product_name(selected.name) != normalize_product_name(name) or not versions_match(
+                selected.version, version
+            ):
+                warnings.append(
+                    f"metadata product {selected.name}@{selected.version} differs from "
+                    f"{source} {name}@{version}"
+                )
+        return selected, warnings, [selected]
+
     normalized_requirements = {
         (normalize_product_name(name), version_key(version))
         for name, version, _source in requirements
@@ -689,6 +779,11 @@ def select_compiler(info: ProjectInfo, explicit: str | None) -> tuple[str, str]:
         raise ResolutionError("build rules declare multiple SysConfig compilers; use --compiler")
     if build_compilers:
         return next(iter(build_compilers)), "build rule"
+    if info.ccs_compiler_conflicts:
+        raise ResolutionError(
+            "CCS configurations declare multiple SysConfig compilers "
+            f"({', '.join(info.ccs_compiler_conflicts)}); use --compiler"
+        )
     if info.ccs_compiler:
         return info.ccs_compiler, ".cproject"
     metadata_args = info.metadata.get("effective_args", {})
