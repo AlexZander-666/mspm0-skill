@@ -26,6 +26,7 @@
 | **识别工程与工具链** | 区分 CCS、Keil/uVision、CMake + GCC/OpenOCD，以及简单工程、分层框架和 FreeRTOS 工程 |
 | **自动构建与烧录** | 固化 SysConfig CLI、gmake、TI Arm Clang、CMake、DSLite/J-Link 和 OpenOCD 工作流 |
 | **连接真实硬件调试** | 支持 CCS-DSS 与 OpenOCD/GDB 两条调试链路，辅助断点、寄存器、符号和复位检查 |
+| **锁定诊断与恢复引导** | 辅助区分探针断连、MEM-AP 不可用和 NONMAIN/安全策略异常，并在用户授权擦除后引导 UART BSL、DSSM Mass Erase 或 Factory Reset 恢复 |
 | **串口闭环验证/调参** | Python 串口收发、文本帧/二进制测试，可用于 PID 与控制参数调试 |
 | **例程与 SDK 检索** | 优先利用用户工程和 TI SDK 官方例程，同时提供经过验证的 GPIO、PWM、Timer、UART/DMA 样例 |
 
