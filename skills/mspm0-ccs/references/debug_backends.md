@@ -113,6 +113,66 @@ One tested source line failed because no code was associated with that exact lin
 
 For non-invasive diagnosis after firmware has already been flashed, prefer `load-symbols`, `break-line --symbols`, or `break-address --symbols` over `--load`. These commands load debug information from the `.out` file without rewriting flash.
 
+## Locked MSPM0 Recovery With CCS-DSS
+
+Do not treat every Cortex connection failure as the same kind of lock. Before erasing anything, confirm the probe, target voltage, SWDIO/SWCLK, NRST, selected device, and `.ccxml`. Then distinguish these cases:
+
+- Application startup, watchdog, clock, low-power, or peripheral faults can block a normal CPU attach even though the security policy is unchanged. Try a reset-aware attach, Wait for Debug, or Set Reset Mode before erasing.
+- SWD can be enabled, disabled, or enabled with a 128-bit password in NONMAIN. If a password is configured, use the known password; never guess or substitute a BSL password.
+- Invalid NONMAIN BCR, BSL, or CRC configuration can prevent normal boot and debug access. This can require a DSSM Factory Reset rather than a MAIN-only erase.
+- DSSM commands are optional in security levels 0 and 1 and unavailable in security level 2. Factory Reset can also be disabled or password-protected by policy. Stop when the configured recovery policy does not permit the requested command.
+- A held-low NRST, repurposed SWD pins, missing target power, or invalid clock supply is a hardware-access failure, not evidence that a destructive erase is needed.
+
+The TI MSPM0 SDK documents the [Debug Subsystem Mailbox and Factory Reset tool](https://dev.ti.com/gallery/view/TIMSPGC/MSPM0_Factory_Reset_Tool/). A matching CCS support package also exposes the operations under `Scripts -> MSPM0xxxx_Commands` after launching the target configuration.
+
+Choose the destructive command deliberately:
+
+- **DSSM Mass Erase** erases MAIN application/code/data while preserving NONMAIN and its security policy. It will not remove a lock caused by an invalid or restrictive NONMAIN policy.
+- **DSSM Factory Reset** erases MAIN and resets NONMAIN boot policies to defaults. Use it for invalid NONMAIN/BCR/BSL/CRC configuration or when the user explicitly wants the device configuration reset.
+- **Password Authentication** grants the operation allowed by the configured policy when the correct SWD or Factory Reset password is known. The Factory Reset password and Bootloader Unlock password are separate values.
+
+Safe sequence:
+
+1. Obtain explicit user approval for loss of the existing firmware and configuration.
+2. Use a `.ccxml` whose device and probe exactly match the hardware. For XDS110, verify the probe independently with `xdsdfu -e` or the OS device list.
+3. Connect only the non-debug `CS_DAP` session and read `CFGAP_BOOTDIAG` when the Cortex-M0+ session cannot connect. Do not require a CPU connection for this read.
+4. Select Mass Erase, Factory Reset, or password authentication from the diagnosis and known policy. Do not automatically escalate from one destructive command to another.
+5. Prefer the `Auto` command when XDS110 NRST is wired and reliable. If TI GEL reports that the command was sent and reset was pulsed but then times out reconnecting to `SEC_AP`, classify the result as unknown and re-read BOOTDIAG; do not report success.
+6. If Auto does not complete, use TI's power-up recovery sequence: power off, hold NRST low, power up while holding NRST low, execute the corresponding `Manual` DSSM command, and release NRST when prompted.
+7. After a completed command, power-cycle when requested. Verify recovery independently by checking that BOOTDIAG changed, connecting the Cortex-M0+ session, reading registers, and performing a non-programming DSLite operation before loading firmware.
+
+Verified recovery case, not a universal guarantee:
+
+- Hardware/tool path: non-Tianmengxing MSPM0G3519 board, XDS110, CCS-DSS from CCS 20.2, and UniFlash 9.2.
+- Initial symptoms: XDS110 was visible, but Cortex attach and DSLite failed with the NONMAIN debug-access/peripheral-configuration diagnostic.
+- `CS_DAP` remained accessible and `CFGAP_BOOTDIAG` read `0x10136`; its low status contained `0x36`, matching the TI support package's invalid BCR/BSL/CRC recovery category.
+- `MSPM0_Mailbox_FactoryReset_Auto` sent the command and pulsed NRST but timed out during `SEC_AP` reconnect. BOOTDIAG remained unchanged, so this was correctly treated as failure/unknown rather than success.
+- `MSPM0_Mailbox_FactoryReset_Manual`, followed by a reset-button press, returned `Command execution completed`.
+- BOOTDIAG changed to `0x6`; CCS-DSS then connected to Cortex-M0+, read PC/SP/LR, and DSLite listed `BlankCheck | MassErase` successfully.
+
+BOOTDIAG encodings and recovery policy can vary by device family and support-package version. Use the target's current TI GEL diagnostics and TRM rather than copying the G3519 value table to another device.
+
+### Tianmengxing MSPM0G3507 Interrupted-Flash Recovery
+
+This is a separate, reproducible case from the non-Tianmengxing MSPM0G3519 DSSM case above.
+
+- Hardware/tool path: LCKFB Tianmengxing MSPM0G3507, a CMSIS-DAPv2/DAPLink probe with UART bridge, and a TI MSPM0-capable OpenOCD build.
+- Trigger: disconnecting the probe while flash programming is in progress.
+- Observed signature: OpenOCD repeatedly reads `SWD DPIDR 0x6ba02477`, then reports `Could not find MEM-AP to control the core`. The same result at 24 MHz, 1 MHz, and 500 kHz indicates that the probe and SWD-DP are reachable; it is not, by itself, a generic wireless-disconnect error.
+- The LCKFB web flasher uses the ROM UART BSL, not SWD. For Tianmengxing, use the board's BSL UART path; the default BSL UART pins are PA10 TX and PA11 RX, at 9600 baud, 8 data bits, no parity, and 1 stop bit.
+
+Recovery boundary:
+
+1. Obtain explicit approval to erase the existing application.
+2. Enter hardware BSL: hold BSL, press and release RST, then release BSL. Start the host operation within the board's short BSL window (the LCKFB instructions state about 10 seconds).
+3. Use the [LCKFB MSPM0 web flasher](https://wiki.lckfb.com/storage/html/mspm0-web-flasher/index.html) or TI's SDK BSL host under `tools/bsl/`. The host must connect, obtain device information, authenticate the BSL password, and issue Mass Erase; the button sequence alone only enters BSL and does not perform the erase.
+4. TI SDK installations provide the all-`FF` development default in `tools/bsl/BSL_GUI_EXE/Input/BSL_Password32_Default.txt`. Use it only when the project has not intentionally changed the BSL password. Do not confuse the BSL password with an SWD or Factory Reset password.
+5. Power-cycle or reset as requested by the host, then independently verify that the Cortex MEM-AP is available before programming the desired firmware.
+
+Do not promise button-free recovery with an ordinary UART plus SWD connection. Software BSL invocation requires a still-running application that implements the invoke path; it does not help when the application cannot run or debug access is already unavailable. Full host automation also requires hardware capable of controlling both BSL and reset, such as deliberately wired probe GPIO or serial handshake outputs. A normal CMSIS-DAP UART/SWD connection does not imply those controls exist.
+
+The web-flasher recovery path has been verified on Tianmengxing MSPM0G3507 after correctly entering hardware BSL. A subsequent read-only OpenOCD probe detected the Cortex-M0+ r0p1 core, reported four breakpoints and two watchpoints, and completed target examination, independently confirming that MEM-AP access was restored. The earlier direct CLI attempt received no BSL ACK because the board had not entered BSL correctly; direct CLI automation remains unverified and must not be presented as supported.
+
 ## When To Stop
 
 Stop and ask the user before continuing if:
