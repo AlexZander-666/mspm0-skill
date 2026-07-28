@@ -13,8 +13,6 @@
 
 </div>
 
-[![Star History Chart](https://api.star-history.com/svg?repos=mc3545dada/mspm0-skill&type=Date)](https://star-history.com/#mc3545dada/mspm0-skill)
-
 面向MSPM0 开发与电赛备赛，适用于 Claude Code、Codex、OpenCode、OpenClaw、Continue、Cursor 等 CLI / 编辑器 Agent。这是一组经过真实项目验证的规则、脚本、例程和调试 Skill。
 
 > [!IMPORTANT]
